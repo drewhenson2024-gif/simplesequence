@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #1c1915;
+  --paper: #f4efe4;
+  --panel: #fffaf2;
+  --line: #d7cbb8;
+  --ochre: #b45309;
+  --muted: #6f6658;
+}
+
+html,
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  letter-spacing: -0.02em;
+}
+
+a {
+  color: inherit;
+}

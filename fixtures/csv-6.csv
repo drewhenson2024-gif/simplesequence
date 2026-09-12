@@ -1,0 +1,7 @@
+first_name,last_name,company,title,email,linkedin_url,opening_line,public_url
+Ada,Lovelace,Analytical Engines,Countess,ada@example.com,https://www.linkedin.com/in/Ada-Lovelace/?trk=x,Saw your note on difference engines,https://example.com/ada
+Grace,Hopper,Navy,Rear Admiral,grace@example.com,https://linkedin.com/in/grace-hopper,COBOL still pays the bills,
+Alan,Turing,Bletchley,Mathematician,alan@example.com,https://www.linkedin.com/in/alan-turing,The imitation game writeup was sharp,
+Katherine,Johnson,NASA,Mathematician,katherine@example.com,https://www.linkedin.com/in/katherine-johnson,Your orbital notes were exact,
+Claude,Shannon,Bell Labs,Engineer,claude@example.com,https://www.linkedin.com/in/claude-shannon,Information theory still maps to GTM,
+Dorothy,Vaughan,NACA,Supervisor,dorothy@example.com,https://www.linkedin.com/in/dorothy-vaughan,The FORTRAN training story stuck,

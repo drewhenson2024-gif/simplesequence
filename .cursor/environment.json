@@ -1,0 +1,5 @@
+{
+  "snapshot": "ubuntu-24.04",
+  "install": "corepack enable && pnpm install",
+  "start": "pnpm dev"
+}
