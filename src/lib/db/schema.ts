@@ -75,6 +75,7 @@ export const campaigns = sqliteTable("campaigns", {
   templateKey: text("template_key"),
   linkedinSenderId: text("linkedin_sender_id"),
   emailSenderId: text("email_sender_id"),
+  giftSenderId: text("gift_sender_id"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -87,6 +88,11 @@ export const sequenceSteps = sqliteTable("sequence_steps", {
   delayHours: integer("delay_hours").notNull().default(0),
   bodyTemplate: text("body_template").notNull().default(""),
   subjectTemplate: text("subject_template"),
+  enabled: integer("enabled").notNull().default(1),
+  skipOverdueHours: integer("skip_overdue_hours").notNull().default(72),
+  imageUrl: text("image_url"),
+  giftItem: text("gift_item"),
+  giftNote: text("gift_note"),
 });
 
 export const enrollments = sqliteTable("enrollments", {
@@ -158,5 +164,19 @@ export const idempotencyKeys = sqliteTable("idempotency_keys", {
 
 export const webhookEvents = sqliteTable("webhook_events", {
   eventId: text("event_id").primaryKey(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const signals = sqliteTable("signals", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  leadId: text("lead_id"),
+  signalType: text("signal_type").notNull(),
+  title: text("title").notNull(),
+  detail: text("detail").notNull().default(""),
+  company: text("company").notNull().default(""),
+  personName: text("person_name").notNull().default(""),
+  source: text("source").notNull().default("stub_catalog"),
+  occurredAt: text("occurred_at").notNull(),
   createdAt: text("created_at").notNull(),
 });

@@ -21,8 +21,8 @@ async function testApp() {
 }
 
 describe("MCP", () => {
-  it("exposes 11 coarse tools", () => {
-    expect(MCP_TOOLS).toHaveLength(11);
+  it("exposes 20 coarse tools", () => {
+    expect(MCP_TOOLS).toHaveLength(20);
     expect(MCP_TOOLS.map((t) => t.name)).toEqual([
       "import_leads",
       "create_campaign",
@@ -35,6 +35,15 @@ describe("MCP", () => {
       "connect_status",
       "get_inbox",
       "stop_lead",
+      "search_people",
+      "research_leads",
+      "qualify_leads",
+      "prompt_to_campaign",
+      "export_leads",
+      "list_signals",
+      "ingest_signals",
+      "suggest_learnings",
+      "apply_learnings",
     ]);
   });
 

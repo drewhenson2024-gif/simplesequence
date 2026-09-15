@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "simplesequence": {
+      "url": "https://simplesequence-three.vercel.app/mcp",
+      "headers": {
+        "X-API-Key": "dev-mcp-key"
+      }
+    }
+  }
+}

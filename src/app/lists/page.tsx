@@ -41,19 +41,22 @@ export default function ListsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">Lists</h1>
-      <p className="mt-2 text-(--muted)">Paste CSV or Markdown. Required: LinkedIn URL or email.</p>
+      <h1 className="text-3xl">People</h1>
+      <p className="mt-2 max-w-2xl text-(--muted)">
+        A list is a spreadsheet of names — not the messages. Import a CSV, then add the list to a
+        sequence.
+      </p>
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         <div className="rounded-lg border border-(--line) bg-(--panel) p-4">
           <label className="text-sm text-(--muted)">List name</label>
           <input
-            className="mt-1 w-full rounded border border-(--line) bg-white px-3 py-2"
+            className="mt-1 w-full rounded border border-(--line) bg-(--input) px-3 py-2"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
           <label className="mt-4 block text-sm text-(--muted)">Paste</label>
           <textarea
-            className="mt-1 h-48 w-full rounded border border-(--line) bg-white p-3 font-mono text-sm"
+            className="mt-1 h-48 w-full rounded border border-(--line) bg-(--input) p-3 font-mono text-sm"
             value={content}
             onChange={(e) => setContent(e.target.value)}
           />
@@ -81,7 +84,10 @@ export default function ListsPage() {
           <pre className="mt-2 overflow-auto rounded border border-(--line) bg-(--panel) p-3 text-xs">
             {preview.join("\n")}
           </pre>
-          <h2 className="mt-6 text-lg">Imported</h2>
+          <h2 className="mt-6 text-lg">Imported lists</h2>
+          {lists.length === 0 ? (
+            <p className="mt-2 text-sm text-(--muted)">No people yet. Paste a CSV on the left and hit Import.</p>
+          ) : null}
           <ul className="mt-2 space-y-2">
             {lists.map((list) => (
               <li key={list.id} className="rounded border border-(--line) bg-(--panel) px-3 py-2">

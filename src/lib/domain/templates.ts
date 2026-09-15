@@ -1,5 +1,5 @@
-export type SequenceChannel = "linkedin" | "email";
-export type SequenceAction = "connection" | "message" | "email";
+export type SequenceChannel = "linkedin" | "email" | "gift";
+export type SequenceAction = "connection" | "message" | "email" | "gift";
 
 export type SequenceStepDraft = {
   stepIndex: number;
@@ -8,6 +8,11 @@ export type SequenceStepDraft = {
   delayHours: number;
   bodyTemplate: string;
   subjectTemplate: string | null;
+  enabled?: boolean;
+  skipOverdueHours?: number;
+  imageUrl?: string | null;
+  giftItem?: string | null;
+  giftNote?: string | null;
 };
 
 export type TemplateKey = "linkedin_only" | "email_only" | "mixed";

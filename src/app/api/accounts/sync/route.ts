@@ -1,0 +1,7 @@
+import { syncUnipileAccounts } from "@/lib/app/commands";
+import { getRuntime } from "@/lib/app/runtime";
+import { withCommand } from "@/lib/http/respond";
+
+export async function POST() {
+  return withCommand(async () => syncUnipileAccounts(await getRuntime()));
+}

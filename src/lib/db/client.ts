@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import { eq } from "drizzle-orm";
 import { createClient, type Client } from "@libsql/client";
+import { createClient as createWebClient } from "@libsql/client/web";
 import { drizzle, type LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "./schema";
 import { DEFAULT_USER_ID, DEFAULT_WORKSPACE_ID } from "../ids";
@@ -80,6 +79,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
   template_key TEXT,
   linkedin_sender_id TEXT,
   email_sender_id TEXT,
+  gift_sender_id TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sequence_steps (
@@ -90,7 +90,12 @@ CREATE TABLE IF NOT EXISTS sequence_steps (
   action TEXT NOT NULL,
   delay_hours INTEGER NOT NULL DEFAULT 0,
   body_template TEXT NOT NULL DEFAULT '',
-  subject_template TEXT
+  subject_template TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  skip_overdue_hours INTEGER NOT NULL DEFAULT 72,
+  image_url TEXT,
+  gift_item TEXT,
+  gift_note TEXT
 );
 CREATE TABLE IF NOT EXISTS enrollments (
   id TEXT PRIMARY KEY,
@@ -153,27 +158,59 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   event_id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS signals (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  lead_id TEXT,
+  signal_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  company TEXT NOT NULL DEFAULT '',
+  person_name TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT 'stub_catalog',
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
+function isRemoteLibsql(url: string): boolean {
+  return /^(libsql|https|wss):\/\//i.test(url);
+}
+
 export function sqliteUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
-  return env.DATABASE_URL ?? "file:./data/simplesequence.db";
+  if (env.TURSO_DATABASE_URL) return env.TURSO_DATABASE_URL;
+  if (env.DATABASE_URL && isRemoteLibsql(env.DATABASE_URL)) return env.DATABASE_URL;
+  throw new Error(
+    "Set TURSO_DATABASE_URL. SimpleSequence runs on Vercel + Turso (https://simplesequence-three.vercel.app), not a local SQLite file.",
+  );
 }
 
 export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
-  if (url.startsWith("file:")) {
-    const filePath = url.replace(/^file:/, "");
-    if (filePath !== ":memory:" && filePath !== "memory") {
-      const abs = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-    }
-  }
-  const client = createClient({ url });
+  const authToken = process.env.TURSO_AUTH_TOKEN || undefined;
+  const client = isRemoteLibsql(url)
+    ? createWebClient({ url, authToken })
+    : createClient({ url });
   const db = drizzle(client, { schema });
   return { db, client };
 }
 
 export async function migrate(client: Client): Promise<void> {
   await client.executeMultiple(DDL);
+  for (const sql of [
+    "ALTER TABLE sequence_steps ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE sequence_steps ADD COLUMN skip_overdue_hours INTEGER NOT NULL DEFAULT 72",
+    "ALTER TABLE sequence_steps ADD COLUMN image_url TEXT",
+    "ALTER TABLE sequence_steps ADD COLUMN gift_item TEXT",
+    "ALTER TABLE sequence_steps ADD COLUMN gift_note TEXT",
+    "ALTER TABLE campaigns ADD COLUMN gift_sender_id TEXT",
+  ]) {
+    try {
+      await client.execute(sql);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column/i.test(msg)) throw err;
+    }
+  }
 }
 
 export async function seedWorkspace(

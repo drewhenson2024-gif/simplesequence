@@ -1,10 +1,13 @@
 node_modules
 .next
+.vercel
 out
 dist
 coverage
 .env
 .env.local
+.env*.local
+!.env.example
 data/*.db
 data/*.db-*
 *.log
