@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addLeadsToCampaign } from "@/lib/app/commands";
+import { addLeadsToCampaign, getCampaign } from "@/lib/app/commands";
 import { getRuntime } from "@/lib/app/runtime";
 import { withCommand } from "@/lib/http/respond";
 
@@ -13,6 +13,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   return withCommand(async () => {
     const input = schema.parse(await req.json());
-    return addLeadsToCampaign(await getRuntime(), id, input);
+    const ctx = await getRuntime();
+    const added = await addLeadsToCampaign(ctx, id, input);
+    return { ...added, campaign: await getCampaign(ctx, id) };
   });
 }

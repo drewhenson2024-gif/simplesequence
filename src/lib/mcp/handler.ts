@@ -150,7 +150,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "create_campaign",
-    description: "Create a campaign. Always saved as draft. Never sends.",
+    description: "Create a draft sequence. Starts empty unless you pass steps. Never sends.",
     inputSchema: {
       type: "object",
       properties: {

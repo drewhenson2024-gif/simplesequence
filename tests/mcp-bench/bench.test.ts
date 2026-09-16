@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { getList, type AppContext } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
+import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { callMcpTool, MCP_TOOLS } from "@/lib/mcp/handler";
 import { MockUnipile } from "@/lib/unipile/port";
@@ -167,16 +168,24 @@ describe("CSV import (2)", () => {
 });
 
 describe("Campaign creation (8)", () => {
-  it("Basic LinkedIn — 3 leads (default template)", async () => {
+  it("Basic LinkedIn — 3 leads (empty by default)", async () => {
     const ctx = await testApp();
-    const campaign = await saveDraft(ctx, {
-      name: "Basic LinkedIn default",
-      template_key: "linkedin_only",
+    const imported = (await callMcpTool(ctx, "import_leads", {
       content: csvLeads(3),
-      expectedLeads: 3,
+      list_name: "Basic LinkedIn default",
+    })) as { listId: string };
+    const created = (await callMcpTool(ctx, "create_campaign", {
+      name: "Basic LinkedIn default",
+    })) as { id: string; status: string };
+    expect(created.status).toBe("draft");
+    await callMcpTool(ctx, "add_leads_to_campaign", {
+      campaign_id: created.id,
+      list_id: imported.listId,
     });
-    expect(campaign.steps.every((s) => s.channel === "linkedin")).toBe(true);
-    expect(campaign.steps[0]?.action).toBe("connection");
+    const campaign = (await callMcpTool(ctx, "get_campaign", { campaign_id: created.id })) as CampaignView;
+    expect(campaign.status).toBe("draft");
+    expect(campaign.enrollments).toHaveLength(3);
+    expect(campaign.steps).toEqual([]);
   });
 
   it("Basic LinkedIn — 3 leads", async () => {
@@ -184,6 +193,7 @@ describe("Campaign creation (8)", () => {
     const campaign = await saveDraft(ctx, {
       name: "Basic LinkedIn",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
       content: csvLeads(3),
       expectedLeads: 3,
     });
@@ -197,6 +207,7 @@ describe("Campaign creation (8)", () => {
     const campaign = await saveDraft(ctx, {
       name: "Personalized LinkedIn",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
       content: csvLeads(40),
       expectedLeads: 40,
     });
@@ -209,6 +220,7 @@ describe("Campaign creation (8)", () => {
     const campaign = await saveDraft(ctx, {
       name: "LinkedIn 40",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
       content: csvLeads(40),
       expectedLeads: 40,
     });
@@ -221,6 +233,7 @@ describe("Campaign creation (8)", () => {
     await saveDraft(ctx, {
       name: "CSV 87 connections",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
       content: csvLeads(87, { email: false }),
       expectedLeads: 87,
     });
@@ -231,6 +244,7 @@ describe("Campaign creation (8)", () => {
     await saveDraft(ctx, {
       name: "Markdown 87",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
       content: markdown87(),
       format: "markdown",
       expectedLeads: 87,
@@ -242,6 +256,7 @@ describe("Campaign creation (8)", () => {
     await saveDraft(ctx, {
       name: "LinkedIn 1000",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
       content: csvLeads(1000),
       expectedLeads: 1000,
     });

@@ -1,8 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { UndoBar } from "@/components/UndoBar";
+import { ensurePeopleCache } from "@/lib/client/peopleCache";
+import { ensureSequencesCache } from "@/lib/client/sequencesCache";
+import { ensureAnalyticsCache, ensureInboxCache, ensureSettingsCache } from "@/lib/client/tabCaches";
 
 const NAV = [
   { href: "/lists", label: "People" },
@@ -22,6 +26,13 @@ export function BackLink({ href, label }: { href: string; label: string }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  useEffect(() => {
+    void ensurePeopleCache();
+    void ensureSequencesCache();
+    void ensureInboxCache();
+    void ensureAnalyticsCache();
+    void ensureSettingsCache();
+  }, []);
   return (
     <div className="min-h-screen">
       <header className="border-b border-(--line) bg-(--paper)">

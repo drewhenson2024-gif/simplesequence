@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
 import { LINKEDIN_INVITE_DAILY_CAP } from "@/lib/domain/linkedinSafety";
+import { useSettings, type SettingsSnapshot } from "@/lib/client/tabCaches";
 
 type Sender = {
   id: string;
@@ -13,18 +14,7 @@ type Sender = {
   unipileAccountId?: string | null;
 };
 
-type Settings = {
-  sandbox: number | boolean;
-  killSwitch: number | boolean;
-  liveKeys?: boolean;
-  senders: Sender[];
-  workspace?: {
-    timezone: string;
-    sandbox: number;
-    killSwitch: number;
-    mcpApiKey: string;
-  };
-};
+type Settings = SettingsSnapshot;
 
 function pickSender(senders: Sender[]): Sender | undefined {
   const rows = senders.filter((s) => s.channel === "linkedin");
@@ -49,18 +39,18 @@ function accountState(sender: Sender | undefined, liveKeys: boolean) {
 }
 
 export default function SettingsPage() {
-  const [data, setData] = useState<Settings | null>(null);
-  const [audit, setAudit] = useState<Array<{ id: string; action: string; createdAt: string }>>([]);
+  const { data: bundle, set: setBundle } = useSettings();
+  const data = bundle?.settings ?? null;
+  const audit = bundle?.audit ?? [];
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function refresh() {
-    const res = await fetch("/api/settings");
+    const [res, a] = await Promise.all([fetch("/api/settings"), fetch("/api/audit")]);
     const json = (await res.json()) as Settings;
-    setData(json);
-    const a = await fetch("/api/audit");
-    setAudit(await a.json());
+    const nextAudit = await a.json();
+    setBundle({ settings: json, audit: Array.isArray(nextAudit) ? nextAudit : [] });
     return json;
   }
 
@@ -70,15 +60,13 @@ export default function SettingsPage() {
       const connected = q.get("connected");
       if (connected === "failed") setError("Connect failed. Try again.");
       else if (connected === "linkedin") setNotice("LinkedIn returned. Syncing…");
-      const first = await refresh();
-      if (first.liveKeys) {
+      const first = bundle?.settings ?? (await refresh());
+      if (connected === "linkedin" && first.liveKeys) {
         await fetch("/api/accounts/sync", { method: "POST" });
         const after = await refresh();
-        if (connected === "linkedin") {
-          const sender = pickSender(after.senders);
-          const state = accountState(sender, true);
-          setNotice(state.live ? "LinkedIn is connected." : "Still waiting on Unipile. Use Sync if this doesn’t update.");
-        }
+        const sender = pickSender(after.senders);
+        const state = accountState(sender, true);
+        setNotice(state.live ? "LinkedIn is connected." : "Still waiting on Unipile. Use Sync if this doesn’t update.");
       }
       if (connected) window.history.replaceState({}, "", "/settings");
     })();
@@ -96,7 +84,7 @@ export default function SettingsPage() {
       setError(typeof json.error === "string" ? json.error : "Could not save settings");
       return;
     }
-    await refresh();
+    setBundle({ settings: json as Settings, audit });
   }
 
   async function connect() {
@@ -112,7 +100,8 @@ export default function SettingsPage() {
       if (body.authUrl && data?.liveKeys) window.location.href = body.authUrl;
       else {
         setNotice("Sandbox LinkedIn is ready.");
-        await refresh();
+        const resSettings = await fetch("/api/settings");
+        setBundle({ settings: (await resSettings.json()) as Settings, audit });
       }
     } finally {
       setBusy(false);
@@ -155,10 +144,11 @@ export default function SettingsPage() {
       {data.liveKeys ? (
         <button
           type="button"
-          className="mt-3 text-sm text-(--muted) underline"
+          className="mt-3 rounded-2xl border border-(--line) px-4 py-1.5 text-sm"
           onClick={async () => {
             await fetch("/api/accounts/sync", { method: "POST" });
-            await refresh();
+            const res = await fetch("/api/settings");
+            setBundle({ settings: (await res.json()) as Settings, audit });
           }}
         >
           Sync Unipile accounts
@@ -259,7 +249,7 @@ function AccountCard({
       <button
         type="button"
         disabled={busy}
-        className="btn-primary mt-4 rounded-md px-4 py-2 disabled:opacity-40"
+        className="btn-primary mt-4 rounded-2xl px-4 py-2 disabled:opacity-40"
         onClick={onConnect}
       >
         {busy ? "Opening…" : actionLabel}

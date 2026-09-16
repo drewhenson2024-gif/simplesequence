@@ -193,7 +193,24 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
+const SCHEMA_VERSION = 4;
+
+async function readSchemaVersion(client: Client): Promise<number> {
+  try {
+    const result = await client.execute("SELECT value FROM schema_meta WHERE key = 'version' LIMIT 1");
+    const row = result.rows[0] as Record<string, unknown> | undefined;
+    return Number(row?.value ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function migrate(client: Client): Promise<void> {
+  await client.execute(
+    "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+  );
+  const version = await readSchemaVersion(client);
+  if (version >= SCHEMA_VERSION) return;
   await client.executeMultiple(DDL);
   for (const sql of [
     "ALTER TABLE sequence_steps ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
@@ -244,6 +261,10 @@ DELETE FROM signals;
       if (!/no such column|duplicate column/i.test(msg)) throw err;
     }
   }
+  await client.execute({
+    sql: "INSERT INTO schema_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    args: ["version", String(SCHEMA_VERSION)],
+  });
 }
 
 export async function seedWorkspace(

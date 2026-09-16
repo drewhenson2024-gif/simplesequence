@@ -9,6 +9,8 @@ import {
   getInbox,
   getList,
   importLeads,
+  listLists,
+  peopleCatalog,
   recordReply,
   recordRestriction,
   replyToLead,
@@ -19,6 +21,7 @@ import {
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { sendJobs } from "@/lib/db/schema";
+import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { MockUnipile } from "@/lib/unipile/port";
 
@@ -78,6 +81,13 @@ describe("commands", () => {
     expect(created.status).toBe("draft");
   });
 
+  it("create_campaign defaults to empty steps", async () => {
+    const { ctx } = await testApp();
+    const created = await createCampaign(ctx, { name: "Q3" });
+    const campaign = await getCampaign(ctx, created.id);
+    expect(campaign.steps).toEqual([]);
+  });
+
   it("draft sequence editor persists copy and skips disabled stages", async () => {
     const { ctx } = await testApp();
     const created = await createCampaign(ctx, { name: "edit me", templateKey: "linkedin_only" });
@@ -117,7 +127,7 @@ describe("commands", () => {
   it("start is required before any Unipile call", async () => {
     const { ctx, unipile } = await testApp();
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     expect(unipile.calls.filter((c) => c.kind !== "lookup")).toHaveLength(0);
     await startCampaign(ctx, campaign.id);
@@ -127,7 +137,7 @@ describe("commands", () => {
   it("tick sends with mock Unipile after start and clock advance", async () => {
     const { ctx, unipile, advance } = await testApp();
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
@@ -139,7 +149,7 @@ describe("commands", () => {
   it("one in-flight send per sender", async () => {
     const { ctx, advance } = await testApp();
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
@@ -156,7 +166,7 @@ describe("commands", () => {
   it("reply stops remaining jobs for that lead", async () => {
     const { ctx, advance } = await testApp();
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     const added = await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     expect(added.enrolled).toBe(6);
     const started = await startCampaign(ctx, campaign.id);
@@ -174,7 +184,7 @@ describe("commands", () => {
   it("restriction opens the circuit for that sender", async () => {
     const { ctx, advance } = await testApp();
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     const started = await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
@@ -212,7 +222,7 @@ describe("commands", () => {
       listName: "no-profile",
       content: "name,email\nNo Li,noli@example.com\n",
     });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
@@ -268,7 +278,7 @@ describe("commands", () => {
   it("inbox reply sends via Unipile without restarting the sequence", async () => {
     const { ctx, unipile, advance } = await testApp();
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
-    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     const added = await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     expect(added.enrolled).toBe(6);
     const started = await startCampaign(ctx, campaign.id);
@@ -321,7 +331,7 @@ describe("commands", () => {
       (_, i) => `P${i},Lead${i},Co,Ops,p${i}@x.com,https://www.linkedin.com/in/p${i}`,
     );
     const list = await importLeads(ctx, { listName: "cap", content: [header, ...rows].join("\n") });
-    const campaign = await createCampaign(ctx, { name: "LI cap", templateKey: "linkedin_only" });
+    const campaign = await createCampaign(ctx, { name: "LI cap", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
@@ -374,5 +384,29 @@ describe("commands", () => {
     const lead = (await getList(ctx, list.listId)).leads[0];
     expect(lead?.fullName.toLowerCase()).toContain("priya");
     expect(lead?.company).toBe("");
+  });
+
+  it("lists people with lead counts without a per-list query", async () => {
+    const { ctx } = await testApp();
+    const a = await importLeads(ctx, {
+      listName: "A",
+      urls: ["https://www.linkedin.com/in/priya-rao"],
+    });
+    const b = await importLeads(ctx, {
+      listName: "B",
+      urls: ["https://www.linkedin.com/in/matt-cole", "https://www.linkedin.com/in/reid-hoffman"],
+    });
+    const rows = await listLists(ctx);
+    expect(rows.find((row) => row.id === a.listId)?.leadCount).toBe(1);
+    expect(rows.find((row) => row.id === b.listId)?.leadCount).toBe(2);
+    const catalog = await peopleCatalog(ctx);
+    expect(catalog.find((row) => row.id === a.listId)?.leads).toHaveLength(1);
+    expect(catalog.find((row) => row.id === b.listId)?.leads).toHaveLength(2);
+  });
+
+  it("migrate is safe to run twice", async () => {
+    const app = createAppDb(":memory:");
+    await migrate(app.client);
+    await migrate(app.client);
   });
 });

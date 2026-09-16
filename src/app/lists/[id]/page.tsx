@@ -4,37 +4,32 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, BackLink } from "@/components/AppShell";
 import { scheduleDelete } from "@/lib/client/pendingDelete";
-
-type Lead = {
-  id: string;
-  fullName: string;
-  company?: string;
-  title?: string;
-  openingLine?: string;
-  linkedinUrlNormalized: string | null;
-  linkedinUrl?: string | null;
-};
+import { patchPeopleList, refreshPeopleList, usePeopleList, type PeopleLead } from "@/lib/client/peopleCache";
 
 export default function ListDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [data, setData] = useState<{ name: string; leads: Lead[] } | null>(null);
-  const [name, setName] = useState("");
+  const { list, loaded, error: cacheError } = usePeopleList(params.id);
+  const [data, setData] = useState<{ name: string; leads: PeopleLead[] } | null>(
+    list ? { name: list.name, leads: list.leads } : null,
+  );
+  const [name, setName] = useState(list?.name ?? "");
   const [busy, setBusy] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportResult, setExportResult] = useState<string | null>(null);
 
-  async function refresh() {
-    const res = await fetch(`/api/lists/${params.id}`);
-    const body = await res.json();
-    setData(body);
-    if (body?.name) setName(body.name);
-  }
-
   useEffect(() => {
-    void refresh();
-  }, [params.id]);
+    if (!list) {
+      if (loaded) setData(null);
+      return;
+    }
+    setData({ name: list.name, leads: list.leads });
+    setName(list.name);
+    if (list.leadCount > 0 && list.leads.length === 0) {
+      void refreshPeopleList(params.id).catch(() => undefined);
+    }
+  }, [list, loaded, params.id]);
 
   async function saveName() {
     setBusy(true);
@@ -47,7 +42,8 @@ export default function ListDetailPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not rename");
-      setData((current) => (current ? { ...current, name: body.name } : body));
+      setData((current) => (current ? { ...current, name: body.name } : current));
+      patchPeopleList(params.id, { name: body.name });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not rename");
     } finally {
@@ -59,7 +55,9 @@ export default function ListDetailPage() {
     if (!data || removingId) return;
     setError(null);
     const previous = data;
-    setData({ ...data, leads: data.leads.filter((lead) => lead.id !== leadId) });
+    const nextLeads = data.leads.filter((lead) => lead.id !== leadId);
+    setData({ ...data, leads: nextLeads });
+    patchPeopleList(params.id, { leads: nextLeads });
     setRemovingId(leadId);
     try {
       const res = await fetch(`/api/lists/${params.id}`, {
@@ -71,6 +69,7 @@ export default function ListDetailPage() {
       if (!res.ok) throw new Error(body.error ?? "Could not remove");
     } catch (err) {
       setData(previous);
+      patchPeopleList(params.id, { leads: previous.leads });
       setError(err instanceof Error ? err.message : "Could not remove");
     } finally {
       setRemovingId(null);
@@ -98,13 +97,24 @@ export default function ListDetailPage() {
     }
   }
 
-  if (!data) {
+  if (!loaded && !data) {
     return (
       <AppShell>
         <p>Loading…</p>
       </AppShell>
     );
   }
+
+  if (loaded && !data) {
+    return (
+      <AppShell>
+        <BackLink href="/lists" label="People" />
+        <p className="mt-3 text-sm text-(--danger)">{cacheError ?? "List not found"}</p>
+      </AppShell>
+    );
+  }
+
+  if (!data) return null;
 
   return (
     <AppShell>
@@ -120,7 +130,7 @@ export default function ListDetailPage() {
           type="button"
           disabled={busy || !name.trim() || name.trim() === data.name}
           onClick={() => void saveName()}
-          className="btn-primary rounded-md px-4 py-2 disabled:opacity-40"
+          className="btn-primary rounded-2xl px-4 py-2 disabled:opacity-40"
         >
           Save name
         </button>
@@ -128,7 +138,7 @@ export default function ListDetailPage() {
           type="button"
           disabled={busy}
           onClick={deleteThis}
-          className="btn-danger rounded-md px-4 py-2 disabled:opacity-40"
+          className="btn-danger rounded-2xl px-4 py-2 disabled:opacity-40"
         >
           Delete list
         </button>
@@ -142,7 +152,7 @@ export default function ListDetailPage() {
           type="button"
           onClick={() => void exportCrm()}
           disabled={busy}
-          className="rounded-md border border-(--line) px-4 py-2"
+          className="rounded-2xl border border-(--line) px-4 py-2"
         >
           {busy ? "Exporting…" : "Export to CRM"}
         </button>
@@ -173,7 +183,7 @@ export default function ListDetailPage() {
                   <button
                     type="button"
                     disabled={removingId === lead.id}
-                    className="text-sm text-(--muted) underline disabled:opacity-40"
+                    className="btn-danger rounded-2xl px-3 py-1 text-sm disabled:opacity-40"
                     onClick={() => void removeLead(lead.id)}
                   >
                     Remove

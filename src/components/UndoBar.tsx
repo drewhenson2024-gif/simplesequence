@@ -36,7 +36,7 @@ export function UndoBar() {
       <p className="text-sm">
         <span className="font-medium">{pending.name}</span> deleted.
       </p>
-      <button type="button" className="text-sm text-(--ochre) underline" onClick={undoDelete}>
+      <button type="button" className="btn-primary rounded-2xl px-4 py-1.5 text-sm" onClick={undoDelete}>
         Undo
       </button>
     </div>

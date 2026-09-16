@@ -4,8 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { scheduleDelete, subscribePendingDelete } from "@/lib/client/pendingDelete";
-
-type ListRow = { id: string; name: string; leadCount: number };
+import { refreshPeopleList, usePeopleLists } from "@/lib/client/peopleCache";
 
 function detectedUrls(text: string): string[] {
   return text
@@ -15,8 +14,7 @@ function detectedUrls(text: string): string[] {
 }
 
 export default function ListsPage() {
-  const [lists, setLists] = useState<ListRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const { lists, loaded, error: cacheError } = usePeopleLists();
   const [content, setContent] = useState("");
   const [name, setName] = useState("");
   const [result, setResult] = useState<string | null>(null);
@@ -27,20 +25,9 @@ export default function ListsPage() {
   const visible = lists.filter((list) => !hiddenIds.has(list.id));
 
   useEffect(() => {
-    return subscribePendingDelete(({ hidden, committed }) => {
+    return subscribePendingDelete(({ hidden }) => {
       setHiddenIds(new Set(hidden.filter((row) => row.kind === "list").map((row) => row.id)));
-      if (committed?.kind === "list") {
-        setLists((rows) => rows.filter((row) => row.id !== committed.id));
-      }
     });
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      const res = await fetch("/api/lists");
-      setLists(await res.json());
-      setLoaded(true);
-    })();
   }, []);
 
   async function onImport() {
@@ -68,15 +55,11 @@ export default function ListsPage() {
         : `Added ${imported} to ${data.name}.`,
     );
     setContent("");
-    setLists((rows) => {
-      const existing = rows.find((row) => row.id === data.listId);
-      if (existing) {
-        return rows.map((row) =>
-          row.id === data.listId ? { ...row, leadCount: row.leadCount + imported } : row,
-        );
-      }
-      return [{ id: data.listId, name: data.name, leadCount: imported }, ...rows];
-    });
+    try {
+      await refreshPeopleList(data.listId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not refresh list");
+    }
   }
 
   return (
@@ -115,7 +98,9 @@ export default function ListsPage() {
           >
             Add links
           </button>
-          {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
+          {error || cacheError ? (
+            <p className="mt-3 text-sm text-(--danger)">{error ?? cacheError}</p>
+          ) : null}
           {result ? <p className="mt-3 text-sm text-(--muted)">{result}</p> : null}
         </div>
         <div>
@@ -140,19 +125,17 @@ export default function ListsPage() {
           ) : null}
           <ul className="mt-2 space-y-2">
             {visible.map((list) => (
-              <li
-                key={list.id}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <Link href={`/lists/${list.id}`} className="font-medium">
-                    {list.name}
-                  </Link>
-                  <span className="ml-2 text-sm text-(--muted)">{list.leadCount} people</span>
-                </div>
+              <li key={list.id} className="flex items-stretch gap-2">
+                <Link
+                  href={`/lists/${list.id}`}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3"
+                >
+                  <span className="font-medium">{list.name}</span>
+                  <span className="shrink-0 text-sm text-(--muted)">{list.leadCount} people</span>
+                </Link>
                 <button
                   type="button"
-                  className="shrink-0 text-sm text-(--muted) underline"
+                  className="btn-danger shrink-0 rounded-2xl px-4 text-sm"
                   onClick={() => scheduleDelete({ kind: "list", id: list.id, name: list.name })}
                 >
                   Delete

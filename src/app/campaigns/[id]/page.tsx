@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, BackLink } from "@/components/AppShell";
 import { SequenceEditor, type EditorStep, type PreviewLead } from "@/components/SequenceEditor";
 import { StatusBadge } from "@/components/Toggle";
 import { scheduleDelete } from "@/lib/client/pendingDelete";
+import { usePeopleLists } from "@/lib/client/peopleCache";
+import { refreshSequence, setSequenceDetail, useSequenceDetail } from "@/lib/client/sequencesCache";
 
 type Campaign = {
   id: string;
@@ -47,7 +49,7 @@ type Campaign = {
 
 type OutboxFilter = "all" | "queued" | "sent" | "skipped" | "failed";
 
-const ACTION_BTN = "rounded-md px-4 py-2";
+const ACTION_BTN = "rounded-2xl px-4 py-2";
 
 function jobTone(status: string): "ok" | "wait" | "danger" | "muted" {
   if (status === "sent") return "ok";
@@ -122,8 +124,9 @@ function blankStep(kind: "connection" | "message", index: number): EditorStep {
 export default function CampaignDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [data, setData] = useState<Campaign | null>(null);
-  const [lists, setLists] = useState<Array<{ id: string; name: string }>>([]);
+  const { detail } = useSequenceDetail<Campaign>(params.id);
+  const [data, setData] = useState<Campaign | null>(detail);
+  const { lists } = usePeopleLists();
   const [listId, setListId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -132,29 +135,25 @@ export default function CampaignDetailPage() {
   const [saving, setSaving] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
   const [outboxFilter, setOutboxFilter] = useState<OutboxFilter>("all");
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
 
-  function applyCampaign(body: Campaign) {
+  function applyCampaign(body: Campaign, syncEditor = true) {
     setData(body);
-    if (!dirty) {
+    setSequenceDetail(body as Record<string, unknown> & { id: string });
+    if (syncEditor) {
       setName(body.name);
       setSteps(toEditor(body.steps));
     }
   }
 
-  async function refresh() {
-    const res = await fetch(`/api/campaigns/${params.id}`);
-    applyCampaign((await res.json()) as Campaign);
-  }
+  useEffect(() => {
+    if (detail) applyCampaign(detail, !dirtyRef.current);
+  }, [detail]);
 
   useEffect(() => {
-    void refresh();
-    void (async () => {
-      const res = await fetch("/api/lists");
-      const rows = await res.json();
-      setLists(rows);
-      if (rows[0]) setListId(rows[0].id);
-    })();
-  }, [params.id]);
+    if (!listId && lists[0]) setListId(lists[0].id);
+  }, [lists, listId]);
 
   const leads: PreviewLead[] = useMemo(() => {
     return (data?.enrollments ?? [])
@@ -204,7 +203,7 @@ export default function CampaignDetailPage() {
       return;
     }
     setDirty(false);
-    if (body.campaign) applyCampaign(body.campaign);
+    if (body.campaign) applyCampaign(body.campaign, !dirtyRef.current);
   }
 
   async function start() {
@@ -251,7 +250,8 @@ export default function CampaignDetailPage() {
     const body = await res.json();
     if (!res.ok) {
       setError(body.error);
-      await refresh();
+      const latest = (await refreshSequence(params.id)) as Campaign;
+      applyCampaign(latest, !dirtyRef.current);
     }
   }
 
@@ -360,7 +360,7 @@ export default function CampaignDetailPage() {
               </option>
             ))}
           </select>
-          <button type="button" onClick={() => void addLeads()} className="rounded-md border border-(--line) px-4 py-2">
+          <button type="button" onClick={() => void addLeads()} className="rounded-2xl border border-(--line) px-4 py-2">
             Add from list
           </button>
         </div>
@@ -397,7 +397,7 @@ export default function CampaignDetailPage() {
                     {e.status !== "stopped" && e.status !== "replied" && e.status !== "completed" ? (
                       <button
                         type="button"
-                        className="text-sm underline"
+                        className="btn-danger rounded-2xl px-3 py-1 text-sm"
                         onClick={() => void stopEnrollment(e.id)}
                       >
                         Stop
@@ -465,7 +465,7 @@ export default function CampaignDetailPage() {
                     {job.status === "pending" || job.status === "claimed" || job.status === "in_progress" ? (
                       <button
                         type="button"
-                        className="underline"
+                        className="btn-danger rounded-2xl px-3 py-1 text-sm"
                         onClick={() => void stopEnrollment(job.enrollmentId)}
                       >
                         Stop lead

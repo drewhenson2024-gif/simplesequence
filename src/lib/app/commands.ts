@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, lte } from "drizzle-orm";
 import type { Client } from "@libsql/client";
 import type { Db } from "../db/client";
 import * as tables from "../db/schema";
@@ -290,15 +290,44 @@ async function enrichDraft(ctx: AppContext, row: LeadDraft, accountId?: string):
 
 export async function listLists(ctx: AppContext) {
   const rows = await ctx.db.select().from(tables.lists).where(eq(tables.lists.workspaceId, ctx.workspaceId));
-  const out = [];
-  for (const list of rows) {
-    const members = await ctx.db
-      .select()
-      .from(tables.listLeads)
-      .where(eq(tables.listLeads.listId, list.id));
-    out.push({ ...list, leadCount: members.length });
+  if (rows.length === 0) return [];
+  const counts = await ctx.db
+    .select({ listId: tables.listLeads.listId, leadCount: count() })
+    .from(tables.listLeads)
+    .where(
+      inArray(
+        tables.listLeads.listId,
+        rows.map((row) => row.id),
+      ),
+    )
+    .groupBy(tables.listLeads.listId);
+  const byId = new Map(counts.map((row) => [row.listId, Number(row.leadCount)]));
+  return rows.map((list) => ({ ...list, leadCount: byId.get(list.id) ?? 0 }));
+}
+
+export async function peopleCatalog(ctx: AppContext) {
+  const rows = await ctx.db.select().from(tables.lists).where(eq(tables.lists.workspaceId, ctx.workspaceId));
+  if (rows.length === 0) return [];
+  const joined = await ctx.db
+    .select({ listId: tables.listLeads.listId, lead: tables.leads })
+    .from(tables.listLeads)
+    .innerJoin(tables.leads, eq(tables.leads.id, tables.listLeads.leadId))
+    .where(
+      inArray(
+        tables.listLeads.listId,
+        rows.map((row) => row.id),
+      ),
+    );
+  const byList = new Map<string, (typeof tables.leads.$inferSelect)[]>();
+  for (const row of joined) {
+    const leads = byList.get(row.listId) ?? [];
+    leads.push(row.lead);
+    byList.set(row.listId, leads);
   }
-  return out;
+  return rows.map((list) => {
+    const leads = byList.get(list.id) ?? [];
+    return { ...list, leads, leadCount: leads.length };
+  });
 }
 
 async function requireList(ctx: AppContext, listId: string) {
@@ -312,14 +341,12 @@ async function requireList(ctx: AppContext, listId: string) {
 }
 
 async function listWithLeads(ctx: AppContext, list: typeof tables.lists.$inferSelect) {
-  const membership = await ctx.db
-    .select()
+  const leadRows = await ctx.db
+    .select({ lead: tables.leads })
     .from(tables.listLeads)
+    .innerJoin(tables.leads, eq(tables.leads.id, tables.listLeads.leadId))
     .where(eq(tables.listLeads.listId, list.id));
-  const ids = membership.map((m) => m.leadId);
-  const leadRows =
-    ids.length === 0 ? [] : await ctx.db.select().from(tables.leads).where(inArray(tables.leads.id, ids));
-  return { ...list, leads: leadRows };
+  return { ...list, leads: leadRows.map((row) => row.lead) };
 }
 
 export async function getList(ctx: AppContext, listId: string) {
@@ -387,9 +414,7 @@ export async function createCampaign(
 ): Promise<{ id: CampaignId; status: "draft" }> {
   const now = iso(ctx.clock.now());
   const id = newId("cmp") as CampaignId;
-  const steps = input.steps?.length
-    ? input.steps
-    : stepsForTemplate(input.templateKey ?? "linkedin_only");
+  const steps = input.steps ?? [];
   rejectRemovedSteps(steps);
   await ctx.db.insert(tables.campaigns).values({
     id,
@@ -400,20 +425,22 @@ export async function createCampaign(
     linkedinSenderId: input.linkedinSenderId ?? null,
     createdAt: now,
   });
-  for (const step of steps) {
-    await ctx.db.insert(tables.sequenceSteps).values({
-      id: newId("stp"),
-      campaignId: id,
-      stepIndex: step.stepIndex,
-      channel: step.channel,
-      action: step.action,
-      delayHours: step.delayHours,
-      bodyTemplate: step.bodyTemplate,
-      subjectTemplate: step.subjectTemplate,
-      enabled: step.enabled === false ? 0 : 1,
-      skipOverdueHours: step.skipOverdueHours ?? 72,
-      imageUrl: step.imageUrl ?? null,
-    });
+  if (steps.length > 0) {
+    await ctx.db.insert(tables.sequenceSteps).values(
+      steps.map((step) => ({
+        id: newId("stp"),
+        campaignId: id,
+        stepIndex: step.stepIndex,
+        channel: step.channel,
+        action: step.action,
+        delayHours: step.delayHours,
+        bodyTemplate: step.bodyTemplate,
+        subjectTemplate: step.subjectTemplate,
+        enabled: step.enabled === false ? 0 : 1,
+        skipOverdueHours: step.skipOverdueHours ?? 72,
+        imageUrl: step.imageUrl ?? null,
+      })),
+    );
   }
   await audit(ctx, "create_campaign", { campaignId: id, name: input.name, status: "draft" });
   return { id, status: "draft" };
@@ -445,20 +472,22 @@ export async function updateCampaign(
     .where(eq(tables.campaigns.id, campaignId));
   if (input.steps) {
     await ctx.db.delete(tables.sequenceSteps).where(eq(tables.sequenceSteps.campaignId, campaignId));
-    for (const step of input.steps) {
-      await ctx.db.insert(tables.sequenceSteps).values({
-        id: newId("stp"),
-        campaignId,
-        stepIndex: step.stepIndex,
-        channel: step.channel,
-        action: step.action,
-        delayHours: step.delayHours,
-        bodyTemplate: step.bodyTemplate,
-        subjectTemplate: step.subjectTemplate,
-        enabled: step.enabled === false ? 0 : 1,
-        skipOverdueHours: step.skipOverdueHours ?? 72,
-        imageUrl: step.imageUrl ?? null,
-      });
+    if (input.steps.length > 0) {
+      await ctx.db.insert(tables.sequenceSteps).values(
+        input.steps.map((step) => ({
+          id: newId("stp"),
+          campaignId,
+          stepIndex: step.stepIndex,
+          channel: step.channel,
+          action: step.action,
+          delayHours: step.delayHours,
+          bodyTemplate: step.bodyTemplate,
+          subjectTemplate: step.subjectTemplate,
+          enabled: step.enabled === false ? 0 : 1,
+          skipOverdueHours: step.skipOverdueHours ?? 72,
+          imageUrl: step.imageUrl ?? null,
+        })),
+      );
     }
   }
   await audit(ctx, "update_campaign", { campaignId });
@@ -495,25 +524,26 @@ export async function addLeadsToCampaign(
   if (!listId) throw new CommandError("list_id or urls required", 400);
   const list = await getList(ctx, listId);
   const now = iso(ctx.clock.now());
-  let enrolled = 0;
-  for (const lead of list.leads) {
-    const existing = await ctx.db
-      .select()
-      .from(tables.enrollments)
-      .where(and(eq(tables.enrollments.campaignId, campaignId), eq(tables.enrollments.leadId, lead.id)))
-      .limit(1);
-    if (existing[0]) continue;
-    await ctx.db.insert(tables.enrollments).values({
-      id: newId("enr") as EnrollmentId,
-      campaignId,
-      leadId: lead.id,
-      status: "pending",
-      nextStepIndex: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
-    enrolled += 1;
+  const already = await ctx.db
+    .select({ leadId: tables.enrollments.leadId })
+    .from(tables.enrollments)
+    .where(eq(tables.enrollments.campaignId, campaignId));
+  const enrolledIds = new Set(already.map((row) => row.leadId));
+  const fresh = list.leads.filter((lead) => !enrolledIds.has(lead.id));
+  if (fresh.length > 0) {
+    await ctx.db.insert(tables.enrollments).values(
+      fresh.map((lead) => ({
+        id: newId("enr") as EnrollmentId,
+        campaignId,
+        leadId: lead.id,
+        status: "pending" as const,
+        nextStepIndex: 0,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
   }
+  const enrolled = fresh.length;
   await audit(ctx, "add_leads_to_campaign", { campaignId, listId, enrolled });
   return { enrolled, listId };
 }
@@ -557,21 +587,14 @@ function missingChannelReason(
 }
 
 export async function getCampaign(ctx: AppContext, campaignId: string) {
-  const [campaign] = await ctx.db
-    .select()
-    .from(tables.campaigns)
-    .where(eq(tables.campaigns.id, campaignId))
-    .limit(1);
+  const [[campaign], steps, enrollments, jobs] = await Promise.all([
+    ctx.db.select().from(tables.campaigns).where(eq(tables.campaigns.id, campaignId)).limit(1),
+    ctx.db.select().from(tables.sequenceSteps).where(eq(tables.sequenceSteps.campaignId, campaignId)),
+    ctx.db.select().from(tables.enrollments).where(eq(tables.enrollments.campaignId, campaignId)),
+    ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.campaignId, campaignId)),
+  ]);
   if (!campaign) throw new CommandError("campaign not found", 404);
-  const steps = await ctx.db
-    .select()
-    .from(tables.sequenceSteps)
-    .where(eq(tables.sequenceSteps.campaignId, campaignId));
   steps.sort((a, b) => a.stepIndex - b.stepIndex);
-  const enrollments = await ctx.db
-    .select()
-    .from(tables.enrollments)
-    .where(eq(tables.enrollments.campaignId, campaignId));
   const counts: Record<string, number> = {};
   for (const e of enrollments) {
     counts[e.status] = (counts[e.status] ?? 0) + 1;
@@ -590,7 +613,6 @@ export async function getCampaign(ctx: AppContext, campaignId: string) {
       body: renderTemplate(step.bodyTemplate, leadFields(lead)),
     })),
   }));
-  const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.campaignId, campaignId));
   const jobCounts: Record<string, number> = {};
   for (const j of jobs) jobCounts[j.status] = (jobCounts[j.status] ?? 0) + 1;
   const enrollById = new Map(enrollments.map((e) => [e.id, e]));
@@ -622,15 +644,19 @@ export async function listCampaigns(ctx: AppContext) {
     .select()
     .from(tables.campaigns)
     .where(eq(tables.campaigns.workspaceId, ctx.workspaceId));
-  const out = [];
-  for (const c of rows) {
-    const enrollments = await ctx.db
-      .select()
-      .from(tables.enrollments)
-      .where(eq(tables.enrollments.campaignId, c.id));
-    out.push({ ...c, enrollmentCount: enrollments.length });
-  }
-  return out;
+  if (rows.length === 0) return [];
+  const counts = await ctx.db
+    .select({ campaignId: tables.enrollments.campaignId, enrollmentCount: count() })
+    .from(tables.enrollments)
+    .where(
+      inArray(
+        tables.enrollments.campaignId,
+        rows.map((row) => row.id),
+      ),
+    )
+    .groupBy(tables.enrollments.campaignId);
+  const byId = new Map(counts.map((row) => [row.campaignId, Number(row.enrollmentCount)]));
+  return rows.map((campaign) => ({ ...campaign, enrollmentCount: byId.get(campaign.id) ?? 0 }));
 }
 
 export type AnalyticsStep = {
@@ -716,18 +742,14 @@ export async function workspaceAnalytics(ctx: AppContext): Promise<WorkspaceAnal
     .from(tables.campaigns)
     .where(eq(tables.campaigns.workspaceId, ctx.workspaceId));
   const ids = campaigns.map((c) => c.id);
-  const enrollments =
+  const [enrollments, jobs, steps] =
     ids.length === 0
-      ? []
-      : await ctx.db.select().from(tables.enrollments).where(inArray(tables.enrollments.campaignId, ids));
-  const jobs =
-    ids.length === 0
-      ? []
-      : await ctx.db.select().from(tables.sendJobs).where(inArray(tables.sendJobs.campaignId, ids));
-  const steps =
-    ids.length === 0
-      ? []
-      : await ctx.db.select().from(tables.sequenceSteps).where(inArray(tables.sequenceSteps.campaignId, ids));
+      ? [[], [], []]
+      : await Promise.all([
+          ctx.db.select().from(tables.enrollments).where(inArray(tables.enrollments.campaignId, ids)),
+          ctx.db.select().from(tables.sendJobs).where(inArray(tables.sendJobs.campaignId, ids)),
+          ctx.db.select().from(tables.sequenceSteps).where(inArray(tables.sequenceSteps.campaignId, ids)),
+        ]);
 
   const enrollByCampaign = new Map<string, typeof enrollments>();
   for (const row of enrollments) {
@@ -1176,20 +1198,13 @@ export async function replyToLead(
     .where(eq(tables.enrollments.id, input.enrollmentId))
     .limit(1);
   if (!enrollment) throw new CommandError("enrollment not found", 404);
-  const [lead] = await ctx.db.select().from(tables.leads).where(eq(tables.leads.id, enrollment.leadId)).limit(1);
+  const [[lead], [campaign]] = await Promise.all([
+    ctx.db.select().from(tables.leads).where(eq(tables.leads.id, enrollment.leadId)).limit(1),
+    ctx.db.select().from(tables.campaigns).where(eq(tables.campaigns.id, enrollment.campaignId)).limit(1),
+  ]);
   if (!lead) throw new CommandError("lead not found", 404);
-  const [campaign] = await ctx.db
-    .select()
-    .from(tables.campaigns)
-    .where(eq(tables.campaigns.id, enrollment.campaignId))
-    .limit(1);
   if (!campaign) throw new CommandError("campaign not found", 404);
 
-  const thread = await ctx.db
-    .select()
-    .from(tables.messages)
-    .where(eq(tables.messages.enrollmentId, enrollment.id));
-  thread.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   const channel = "linkedin" as const;
   const profileUrl = lead.linkedinUrlNormalized ?? lead.linkedinUrl;
   if (!profileUrl) throw new CommandError("no linkedin url on this lead");
@@ -1203,8 +1218,9 @@ export async function replyToLead(
     .limit(1);
   const accountId = sender?.unipileAccountId ?? "mock";
   const result = await ctx.unipile.message({ accountId, profileUrl, body });
+  const messageId = newId("msg");
   await ctx.db.insert(tables.messages).values({
-    id: newId("msg"),
+    id: messageId,
     enrollmentId: enrollment.id,
     channel,
     direction: "outbound",
@@ -1220,26 +1236,28 @@ export async function replyToLead(
   });
   return {
     ok: true,
+    id: messageId,
     enrollmentId: enrollment.id,
     channel,
     dryRun: result.dryRun,
     providerId: result.providerId,
+    createdAt: iso(ctx.clock.now()),
   };
 }
 
 async function cancelOpenJobs(ctx: AppContext, enrollmentId: string) {
   const jobs = await ctx.db
-    .select()
+    .select({ id: tables.sendJobs.id, status: tables.sendJobs.status })
     .from(tables.sendJobs)
     .where(eq(tables.sendJobs.enrollmentId, enrollmentId));
-  for (const job of jobs) {
-    if (job.status === "pending" || job.status === "claimed") {
-      await ctx.db
-        .update(tables.sendJobs)
-        .set({ status: transitionJob(job.status as JobStatus, "cancelled") })
-        .where(eq(tables.sendJobs.id, job.id));
-    }
-  }
+  const ids = jobs
+    .filter((job) => job.status === "pending" || job.status === "claimed")
+    .map((job) => job.id);
+  if (ids.length === 0) return;
+  await ctx.db
+    .update(tables.sendJobs)
+    .set({ status: "cancelled" })
+    .where(inArray(tables.sendJobs.id, ids));
 }
 
 export async function recordReply(

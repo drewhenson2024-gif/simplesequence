@@ -4,49 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { SoonBadge, StatusBadge } from "@/components/Toggle";
-
-type AnalyticsStep = {
-  stepIndex: number;
-  action: string;
-  channel: string;
-  sent: number;
-  skipped: number;
-  failed: number;
-  replies: number;
-  replyRate: number;
-  skipReasons: Record<string, number>;
-};
-
-type AnalyticsRun = {
-  id: string;
-  name: string;
-  status: string;
-  enrolled: number;
-  sent: number;
-  skipped: number;
-  failed: number;
-  pending: number;
-  replies: number;
-  replyRate: number;
-  restricted: boolean;
-  lastActivity: string | null;
-  steps: AnalyticsStep[];
-  insights: string[];
-};
-
-type WorkspaceAnalytics = {
-  totals: {
-    runs: number;
-    enrolled: number;
-    sent: number;
-    skipped: number;
-    failed: number;
-    replies: number;
-    replyRate: number;
-    restricted: number;
-  };
-  runs: AnalyticsRun[];
-};
+import { useAnalytics } from "@/lib/client/tabCaches";
 
 function rateLabel(rate: number, sent: number) {
   if (sent === 0) return "—";
@@ -62,27 +20,18 @@ function statusTone(status: string): "ok" | "off" | "wait" | "danger" | "muted" 
 }
 
 export default function AnalyticsPage() {
-  const [data, setData] = useState<WorkspaceAnalytics | null>(null);
+  const { data, loaded, error: cacheError } = useAnalytics();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applyBusy, setApplyBusy] = useState(false);
 
-  async function refresh() {
-    const res = await fetch("/api/analytics");
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error ?? "failed to load analytics");
-    setData(body);
-    setSelectedId((current) => current ?? body.runs[0]?.id ?? null);
-    setLoaded(true);
-  }
+  useEffect(() => {
+    if (cacheError) setError(cacheError);
+  }, [cacheError]);
 
   useEffect(() => {
-    void refresh().catch((err) => {
-      setError(err instanceof Error ? err.message : "failed to load analytics");
-      setLoaded(true);
-    });
-  }, []);
+    if (!selectedId && data?.runs[0]) setSelectedId(data.runs[0].id);
+  }, [data, selectedId]);
 
   const selected = useMemo(
     () => data?.runs.find((run) => run.id === selectedId) ?? null,
@@ -180,7 +129,7 @@ export default function AnalyticsPage() {
                   <p className="text-xs uppercase tracking-wide text-(--muted)">Selected run</p>
                   <h2 className="mt-1 text-xl">{selected.name}</h2>
                 </div>
-                <Link href={`/campaigns/${selected.id}`} className="text-sm text-(--ochre)">
+                <Link href={`/campaigns/${selected.id}`} className="btn-primary rounded-2xl px-4 py-1.5 text-sm">
                   Open sequence
                 </Link>
               </div>

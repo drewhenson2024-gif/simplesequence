@@ -15,6 +15,7 @@ import {
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { sequenceSteps, sendJobs } from "@/lib/db/schema";
+import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID, newId } from "@/lib/ids";
 import { callMcpTool, MCP_TOOLS } from "@/lib/mcp/handler";
 import { MockUnipile } from "@/lib/unipile/port";
@@ -92,7 +93,7 @@ describe("GTM — analytics", () => {
       listName: "no-profile",
       content: "name,email\nNo Li,noli@example.com\n",
     });
-    const created = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
+    const created = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
     const added = await addLeadsToCampaign(ctx, created.id, { listId: imported.listId });
     await startCampaign(ctx, created.id);
     advance(20 * 60 * 1000);
@@ -111,7 +112,7 @@ describe("GTM — analytics", () => {
     const imported = await importLeads(ctx, {
       content: "name,email,linkedin_url\nAda,ada@example.com,https://www.linkedin.com/in/ada-lovelace\n",
     });
-    const created = await createCampaign(ctx, { name: "Voice", templateKey: "linkedin_only" });
+    const created = await createCampaign(ctx, { name: "Voice", steps: stepsForTemplate() });
     await addLeadsToCampaign(ctx, created.id, { listId: imported.listId });
     const started = await startCampaign(ctx, created.id);
     advance(20 * 60 * 1000);

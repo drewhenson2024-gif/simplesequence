@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCampaign, importLeads, type AppContext } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
+import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { callMcpTool, MCP_TOOLS } from "@/lib/mcp/handler";
 import { MockUnipile } from "@/lib/unipile/port";
@@ -53,9 +54,14 @@ describe("MCP", () => {
   it("create_campaign via MCP is always draft", async () => {
     const ctx = await testApp();
     const created = (await callMcpTool(ctx, "create_campaign", { name: "From Codex" })) as {
+      id: string;
       status: string;
     };
     expect(created.status).toBe("draft");
+    const campaign = (await callMcpTool(ctx, "get_campaign", { campaign_id: created.id })) as {
+      steps: unknown[];
+    };
+    expect(campaign.steps).toEqual([]);
   });
 
   it("import_leads then get_campaign shows pending enrollments", async () => {
@@ -158,6 +164,7 @@ describe("MCP", () => {
     const created = (await callMcpTool(ctx, "create_campaign", {
       name: "Reply check",
       template_key: "linkedin_only",
+      steps: stepsForTemplate(),
     })) as { id: string };
     await callMcpTool(ctx, "add_leads_to_campaign", {
       campaign_id: created.id,

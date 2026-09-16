@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
+import { useInbox, type InboxMessage } from "@/lib/client/tabCaches";
 
 type Lead = {
   fullName: string;
@@ -10,17 +11,7 @@ type Lead = {
   linkedinUrlNormalized?: string | null;
 };
 
-type Msg = {
-  id: string;
-  channel: string;
-  direction: string;
-  body: string;
-  subject: string | null;
-  enrollmentId: string;
-  createdAt: string;
-  enrollmentStatus?: string | null;
-  lead: Lead | null;
-};
+type Msg = InboxMessage;
 
 type Thread = {
   enrollmentId: string;
@@ -31,21 +22,13 @@ type Thread = {
 };
 
 export default function InboxPage() {
-  const [rows, setRows] = useState<Msg[]>([]);
+  const { data: cachedRows, loaded, error: cacheError, set: setInbox } = useInbox();
+  const rows = cachedRows ?? [];
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "needs_reply" | "waiting" | "stopped">("all");
-
-  async function refresh() {
-    const res = await fetch("/api/inbox");
-    setRows(await res.json());
-  }
-
-  useEffect(() => {
-    void refresh();
-  }, []);
 
   const threads: Thread[] = useMemo(() => {
     const by = new Map<string, Thread>();
@@ -84,28 +67,48 @@ export default function InboxPage() {
   const active = visible.find((t) => t.enrollmentId === openId) ?? visible[0] ?? null;
 
   async function stop(enrollmentId: string) {
-    await fetch("/api/inbox/stop", {
+    setInbox(
+      rows.map((msg) => (msg.enrollmentId === enrollmentId ? { ...msg, enrollmentStatus: "stopped" } : msg)),
+    );
+    const res = await fetch("/api/inbox/stop", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ enrollmentId }),
     });
-    await refresh();
+    if (!res.ok) {
+      const resInbox = await fetch("/api/inbox");
+      setInbox(await resInbox.json());
+    }
   }
 
   async function reply() {
     if (!active) return;
     setBusy(true);
     setError(null);
+    const text = draft;
     try {
       const res = await fetch("/api/inbox/reply", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enrollmentId: active.enrollmentId, body: draft, channel: "linkedin" }),
+        body: JSON.stringify({ enrollmentId: active.enrollmentId, body: text, channel: "linkedin" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "reply failed");
       setDraft("");
-      await refresh();
+      setInbox([
+        {
+          id: data.id ?? `local_${Date.now()}`,
+          channel: "linkedin",
+          direction: "outbound",
+          body: text,
+          subject: null,
+          enrollmentId: active.enrollmentId,
+          createdAt: data.createdAt ?? new Date().toISOString(),
+          enrollmentStatus: active.enrollmentStatus,
+          lead: active.lead,
+        },
+        ...rows,
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "reply failed");
     } finally {
@@ -143,7 +146,10 @@ export default function InboxPage() {
           </button>
         ))}
       </div>
-      {threads.length === 0 ? (
+      {error || cacheError ? <p className="mt-4 text-sm text-(--danger)">{error ?? cacheError}</p> : null}
+      {!loaded ? (
+        <p className="mt-6 text-(--muted)">Loading…</p>
+      ) : threads.length === 0 ? (
         <p className="mt-6 text-(--muted)">No messages yet. Start a sequence first.</p>
       ) : visible.length === 0 ? (
         <p className="mt-6 text-(--muted)">Nothing in this view.</p>
@@ -179,7 +185,11 @@ export default function InboxPage() {
                     <p className="text-sm text-(--muted)">{active.enrollmentStatus}</p>
                   ) : null}
                 </div>
-                <button type="button" className="underline text-sm" onClick={() => void stop(active.enrollmentId)}>
+                <button
+                  type="button"
+                  className="btn-danger rounded-2xl px-4 py-1.5 text-sm"
+                  onClick={() => void stop(active.enrollmentId)}
+                >
                   Stop lead
                 </button>
               </div>
@@ -205,7 +215,7 @@ export default function InboxPage() {
                   type="button"
                   disabled={busy || !draft.trim() || !canLinkedIn}
                   onClick={() => void reply()}
-                  className="btn-primary mt-3 rounded-md px-4 py-2 disabled:opacity-40"
+                  className="btn-primary mt-3 rounded-2xl px-4 py-2 disabled:opacity-40"
                 >
                   {busy ? "Sending…" : "Reply"}
                 </button>

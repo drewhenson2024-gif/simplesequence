@@ -139,7 +139,7 @@ Header: X-API-Key (copy the key after Open app → Settings)`}
       <footer className="border-t border-(--line)">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-8 text-sm text-(--muted)">
           <p>SimpleSequence · MCP at /mcp</p>
-          <Link href="/lists" className="text-(--ochre)">
+          <Link href="/lists" className="btn-primary rounded-2xl px-4 py-1.5 text-sm">
             Open app
           </Link>
         </div>

@@ -6,43 +6,33 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
 import { scheduleDelete, subscribePendingDelete } from "@/lib/client/pendingDelete";
-
-type Campaign = { id: string; name: string; status: string; enrollmentCount: number };
+import { upsertSequence, useSequences } from "@/lib/client/sequencesCache";
 
 export default function CampaignsPage() {
   const router = useRouter();
-  const [rows, setRows] = useState<Campaign[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [name, setName] = useState("LinkedIn sequence");
+  const { sequences, loaded, error } = useSequences();
+  const [name, setName] = useState("");
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
-  const visible = rows.filter((row) => !hiddenIds.has(row.id));
+  const visible = sequences.filter((row) => !hiddenIds.has(row.id));
 
   useEffect(() => {
-    return subscribePendingDelete(({ hidden, committed }) => {
+    return subscribePendingDelete(({ hidden }) => {
       setHiddenIds(new Set(hidden.filter((item) => item.kind === "campaign").map((item) => item.id)));
-      if (committed?.kind === "campaign") {
-        setRows((current) => current.filter((row) => row.id !== committed.id));
-      }
     });
-  }, []);
-
-  useEffect(() => {
-    void (async () => {
-      const res = await fetch("/api/campaigns");
-      setRows(await res.json());
-      setLoaded(true);
-    })();
   }, []);
 
   async function create() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
     const res = await fetch("/api/campaigns", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, templateKey: "linkedin_only" }),
+      body: JSON.stringify({ name: trimmed, templateKey: "linkedin_only" }),
     });
     const data = await res.json();
     if (!res.ok) return;
+    upsertSequence({ id: data.id, name: trimmed, status: data.status ?? "draft", enrollmentCount: 0 });
     router.push(`/campaigns/${data.id}`);
   }
 
@@ -62,7 +52,12 @@ export default function CampaignsPage() {
             onChange={(e) => setName(e.target.value)}
           />
         </div>
-        <button type="button" onClick={() => void create()} className="btn-primary rounded-full px-4 py-2">
+        <button
+          type="button"
+          disabled={!name.trim()}
+          onClick={() => void create()}
+          className="btn-primary rounded-full px-4 py-2 disabled:opacity-40"
+        >
           Create draft
         </button>
       </div>
@@ -77,28 +72,32 @@ export default function CampaignsPage() {
             No sequences yet. Create a draft above.
           </li>
         ) : null}
+        {error ? <li className="text-sm text-(--danger)">{error}</li> : null}
         {visible.map((c) => (
-          <li key={c.id} className="flex items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3">
-            <Link href={`/campaigns/${c.id}`} className="min-w-0 font-medium">
-              {c.name}
-            </Link>
-            <span className="flex shrink-0 items-center gap-3 text-sm text-(--muted)">
-              <StatusBadge
-                tone={c.status === "running" ? "ok" : c.status === "paused" ? "wait" : "muted"}
-              >
-                {c.status}
-              </StatusBadge>
-              {c.enrollmentCount} people
-              {c.status === "draft" ? (
-                <button
-                  type="button"
-                  className="underline"
-                  onClick={() => scheduleDelete({ kind: "campaign", id: c.id, name: c.name })}
+          <li key={c.id} className="flex items-stretch gap-2">
+            <Link
+              href={`/campaigns/${c.id}`}
+              className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3"
+            >
+              <span className="font-medium">{c.name}</span>
+              <span className="flex shrink-0 items-center gap-3 text-sm text-(--muted)">
+                <StatusBadge
+                  tone={c.status === "running" ? "ok" : c.status === "paused" ? "wait" : "muted"}
                 >
-                  Delete
-                </button>
-              ) : null}
-            </span>
+                  {c.status}
+                </StatusBadge>
+                {c.enrollmentCount} people
+              </span>
+            </Link>
+            {c.status === "draft" ? (
+              <button
+                type="button"
+                className="btn-danger shrink-0 rounded-2xl px-4 text-sm"
+                onClick={() => scheduleDelete({ kind: "campaign", id: c.id, name: c.name })}
+              >
+                Delete
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
