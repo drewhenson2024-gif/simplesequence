@@ -36,7 +36,7 @@ import {
   type SequenceStepDraft,
   type TemplateKey,
 } from "../domain/templates";
-import { contentHash, parseLeads, type LeadDraft } from "../ingest/parser";
+import { contentHash, normalizeLinkedInUrl, parseLeads, type LeadDraft } from "../ingest/parser";
 import { applyProfileToDraft } from "../domain/profile";
 import { channelFromUnipileAccount, keysPresent, type UnipilePort } from "../unipile/port";
 
@@ -1911,6 +1911,85 @@ export async function applyLearnings(ctx: AppContext, campaignId: string) {
   });
   await audit(ctx, "apply_learnings", { sourceId: campaignId, draftId: created.id, status: "draft" });
   return { ...created, status: "draft" as const, sourceId: campaignId, started: false, suggestions: learnings.suggestions };
+}
+
+export function looksLikeLinkedInRestriction(message: string) {
+  return /restrict|rate.?limit|too many|429|checkpoint|captcha|temporarily blocked|limit exceeded|account.*limit/i.test(
+    message,
+  );
+}
+
+export async function runTrialAction(
+  ctx: AppContext,
+  input: { action: "connection" | "message"; url: string; body?: string },
+): Promise<{
+  ok: boolean;
+  sent: boolean;
+  restricted: boolean;
+  dryRun: boolean;
+  error: string | null;
+  senderStatus: string;
+}> {
+  const ws = await getWorkspace(ctx);
+  if (ws.killSwitch) throw new CommandError("kill switch is on", 409);
+  const url = normalizeLinkedInUrl(input.url);
+  if (!url) throw new CommandError("linkedin url required", 400);
+  const senderId = await ensureSandboxSender(ctx, "linkedin");
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, senderId))
+    .limit(1);
+  if (!sender) throw new CommandError("LinkedIn sender required", 409);
+  if (sender.status === "restricted") {
+    return {
+      ok: false,
+      sent: false,
+      restricted: true,
+      dryRun: false,
+      error: "sender restricted",
+      senderStatus: sender.status,
+    };
+  }
+  const accountId = sender.unipileAccountId ?? "mock";
+  const body = (input.body ?? "").trim();
+  try {
+    const result =
+      input.action === "connection"
+        ? await ctx.unipile.invite({ accountId, profileUrl: url, body: body.slice(0, 300) })
+        : await ctx.unipile.message({ accountId, profileUrl: url, body: body || "Hello" });
+    await audit(ctx, "trial_action", { action: input.action, url, dryRun: result.dryRun });
+    return {
+      ok: true,
+      sent: true,
+      restricted: false,
+      dryRun: Boolean(result.dryRun),
+      error: null,
+      senderStatus: sender.status,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "send failed";
+    if (looksLikeLinkedInRestriction(message)) {
+      await recordRestriction(ctx, senderId);
+      return {
+        ok: false,
+        sent: false,
+        restricted: true,
+        dryRun: false,
+        error: message,
+        senderStatus: "restricted",
+      };
+    }
+    await audit(ctx, "trial_action_failed", { action: input.action, url, error: message });
+    return {
+      ok: false,
+      sent: false,
+      restricted: false,
+      dryRun: false,
+      error: message,
+      senderStatus: sender.status,
+    };
+  }
 }
 
 export function defaultClock(): Clock {

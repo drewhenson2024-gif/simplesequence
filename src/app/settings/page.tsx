@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
 import { LINKEDIN_INVITE_DAILY_CAP } from "@/lib/domain/linkedinSafety";
@@ -201,6 +202,13 @@ export default function SettingsPage() {
           Cursor MCP: URL https://simplesequence-three.vercel.app/mcp with header X-API-Key set to
           that key. Agents can import URLs, draft, Start, inbox, and analytics. Import never auto-sends.
           Connecting LinkedIn is this page.
+        </p>
+        <p className="mt-3 text-sm">
+          <Link href="/trials" className="underline">
+            Developer trial
+          </Link>
+          {" — "}
+          fire actions at a pace and stop on restrict. Does not create LinkedIn accounts.
         </p>
       </section>
 
