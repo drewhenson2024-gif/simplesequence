@@ -11,7 +11,6 @@ export type EditorStep = {
   bodyTemplate: string;
   subjectTemplate: string | null;
   enabled: boolean;
-  skipOverdueHours: number;
   imageUrl?: string | null;
 };
 
@@ -213,20 +212,6 @@ export function SequenceEditor({
                   ) : (
                     <p className="text-sm text-(--muted)">Sends first</p>
                   )}
-                  <label className="block text-sm">
-                    <span className="text-(--muted)">Skip overdue</span>
-                    <span className="mt-1 flex items-center gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        disabled={!editable}
-                        className="w-16 rounded border border-(--line) bg-(--input) px-2 py-1"
-                        value={Math.round((step.skipOverdueHours ?? 72) / 24)}
-                        onChange={(e) => patch(index, { skipOverdueHours: (Number(e.target.value) || 0) * 24 })}
-                      />
-                      days
-                    </span>
-                  </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="checkbox"

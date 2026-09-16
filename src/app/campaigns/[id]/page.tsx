@@ -21,7 +21,6 @@ type Campaign = {
     bodyTemplate: string;
     subjectTemplate: string | null;
     enabled?: number;
-    skipOverdueHours?: number;
     imageUrl?: string | null;
   }>;
   enrollments: Array<{
@@ -89,7 +88,6 @@ function toEditor(steps: Campaign["steps"]): EditorStep[] {
       bodyTemplate: step.bodyTemplate,
       subjectTemplate: step.subjectTemplate,
       enabled: step.enabled !== 0,
-      skipOverdueHours: step.skipOverdueHours ?? 72,
       imageUrl: step.imageUrl ?? null,
     }));
 }
@@ -104,7 +102,6 @@ function blankStep(kind: "connection" | "message", index: number): EditorStep {
       bodyTemplate: "Hi {{first_name}} — {{title}} at {{company}}",
       subjectTemplate: null,
       enabled: true,
-      skipOverdueHours: 72,
       imageUrl: null,
     };
   }
@@ -116,7 +113,6 @@ function blankStep(kind: "connection" | "message", index: number): EditorStep {
     bodyTemplate: "Hi {{first_name}}, following up.",
     subjectTemplate: null,
     enabled: true,
-    skipOverdueHours: 72,
     imageUrl: null,
   };
 }

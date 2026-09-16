@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
   addLeadsToCampaign,
@@ -20,7 +20,7 @@ import {
   type AppContext,
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
-import { sendJobs } from "@/lib/db/schema";
+import { sendJobs, sequenceSteps } from "@/lib/db/schema";
 import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { MockUnipile } from "@/lib/unipile/port";
@@ -241,7 +241,7 @@ describe("commands", () => {
         "name,email,linkedin_url\nPat,pat@example.com,https://www.linkedin.com/in/pat-lee\n",
     });
     const campaign = await createCampaign(ctx, {
-      name: "overdue connect",
+      name: "disabled connect",
       steps: [
         {
           stepIndex: 0,
@@ -250,7 +250,6 @@ describe("commands", () => {
           delayHours: 0,
           bodyTemplate: "Hi {{first_name}}",
           subjectTemplate: null,
-          skipOverdueHours: 1,
         },
         {
           stepIndex: 1,
@@ -264,15 +263,33 @@ describe("commands", () => {
     });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
-    advance(3 * 60 * 60 * 1000);
+    await ctx.db
+      .update(sequenceSteps)
+      .set({ enabled: 0 })
+      .where(and(eq(sequenceSteps.campaignId, campaign.id), eq(sequenceSteps.stepIndex, 0)));
+    advance(20 * 60 * 1000);
     await tick(ctx, { ignoreWorkingHours: true });
     advance(20 * 60 * 1000);
     await tick(ctx, { ignoreWorkingHours: true });
     const after = await getCampaign(ctx, campaign.id);
-    expect(after.jobs.find((j) => j.action === "connection")?.skipReason).toBe("overdue");
+    expect(after.jobs.find((j) => j.action === "connection")?.skipReason).toBe("disabled");
     expect(after.jobs.find((j) => j.action === "message")?.skipReason).toBe("not connected");
     expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(0);
     expect(unipile.calls.filter((c) => c.kind === "email")).toHaveLength(0);
+  });
+
+  it("still sends a step after its due time", async () => {
+    const { ctx, unipile, advance } = await testApp();
+    const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
+    const campaign = await createCampaign(ctx, { name: "late still sends", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
+    await startCampaign(ctx, campaign.id);
+    advance(10 * 24 * 60 * 60 * 1000);
+    const result = await tick(ctx, { ignoreWorkingHours: true });
+    expect(result.processed).toBeGreaterThan(0);
+    expect(unipile.calls.some((c) => c.kind === "invite")).toBe(true);
+    const after = await getCampaign(ctx, campaign.id);
+    expect(after.jobs.some((j) => j.skipReason === "overdue")).toBe(false);
   });
 
   it("inbox reply sends via Unipile without restarting the sequence", async () => {

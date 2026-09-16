@@ -1569,14 +1569,6 @@ async function executeJob(ctx: AppContext, jobId: string) {
     return;
   }
 
-  if ((step.skipOverdueHours ?? 0) > 0) {
-    const due = new Date(job.dueAt).getTime();
-    if (ctx.clock.now().getTime() > due + step.skipOverdueHours * 3600 * 1000) {
-      await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "overdue");
-      return;
-    }
-  }
-
   const missing = missingChannelReason(step, lead);
   if (missing) {
     await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", missing);
