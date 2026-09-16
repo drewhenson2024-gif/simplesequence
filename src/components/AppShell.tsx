@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { UndoBar } from "@/components/UndoBar";
 
 const NAV = [
   { href: "/lists", label: "People" },
@@ -47,7 +48,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <UndoBar />
+        {children}
+      </main>
     </div>
   );
 }

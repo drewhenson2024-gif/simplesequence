@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AppShell, BackLink } from "@/components/AppShell";
+import { scheduleDelete } from "@/lib/client/pendingDelete";
 
 type Lead = {
   id: string;
@@ -16,6 +17,7 @@ type Lead = {
 
 export default function ListDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [data, setData] = useState<{ name: string; leads: Lead[] } | null>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,7 +47,7 @@ export default function ListDetailPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not rename");
-      setData(body);
+      setData((current) => (current ? { ...current, name: body.name } : body));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not rename");
     } finally {
@@ -67,7 +69,6 @@ export default function ListDetailPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Could not remove");
-      setData(body);
     } catch (err) {
       setData(previous);
       setError(err instanceof Error ? err.message : "Could not remove");
@@ -76,19 +77,10 @@ export default function ListDetailPage() {
     }
   }
 
-  async function deleteThis() {
-    if (!window.confirm("Delete this list? People already in a sequence stay there.")) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/lists/${params.id}`, { method: "DELETE" });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not delete");
-      window.location.href = "/lists";
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete");
-      setBusy(false);
-    }
+  function deleteThis() {
+    if (!data) return;
+    scheduleDelete({ kind: "list", id: params.id, name: data.name });
+    router.replace("/lists");
   }
 
   async function exportCrm() {
@@ -135,7 +127,7 @@ export default function ListDetailPage() {
         <button
           type="button"
           disabled={busy}
-          onClick={() => void deleteThis()}
+          onClick={deleteThis}
           className="btn-danger rounded-md px-4 py-2 disabled:opacity-40"
         >
           Delete list

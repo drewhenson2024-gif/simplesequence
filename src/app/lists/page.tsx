@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
+import { scheduleDelete, subscribePendingDelete } from "@/lib/client/pendingDelete";
 
 type ListRow = { id: string; name: string; leadCount: number };
 
@@ -20,17 +21,26 @@ export default function ListsPage() {
   const [name, setName] = useState("");
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
   const urls = useMemo(() => detectedUrls(content), [content]);
-
-  async function refresh() {
-    const res = await fetch("/api/lists");
-    setLists(await res.json());
-    setLoaded(true);
-  }
+  const visible = lists.filter((list) => !hiddenIds.has(list.id));
 
   useEffect(() => {
-    void refresh();
+    return subscribePendingDelete(({ hidden, committed }) => {
+      setHiddenIds(new Set(hidden.filter((row) => row.kind === "list").map((row) => row.id)));
+      if (committed?.kind === "list") {
+        setLists((rows) => rows.filter((row) => row.id !== committed.id));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/lists");
+      setLists(await res.json());
+      setLoaded(true);
+    })();
   }, []);
 
   async function onImport() {
@@ -58,7 +68,15 @@ export default function ListsPage() {
         : `Added ${imported} to ${data.name}.`,
     );
     setContent("");
-    await refresh();
+    setLists((rows) => {
+      const existing = rows.find((row) => row.id === data.listId);
+      if (existing) {
+        return rows.map((row) =>
+          row.id === data.listId ? { ...row, leadCount: row.leadCount + imported } : row,
+        );
+      }
+      return [{ id: data.listId, name: data.name, leadCount: imported }, ...rows];
+    });
   }
 
   return (
@@ -117,16 +135,28 @@ export default function ListsPage() {
           <h2 className="mt-6 text-lg">Your lists</h2>
           {!loaded ? (
             <p className="mt-2 text-sm text-(--muted)">Loading…</p>
-          ) : lists.length === 0 ? (
+          ) : visible.length === 0 ? (
             <p className="mt-2 text-sm text-(--muted)">No people yet. Paste LinkedIn profile URLs.</p>
           ) : null}
           <ul className="mt-2 space-y-2">
-            {lists.map((list) => (
-              <li key={list.id} className="rounded-2xl border border-(--line) bg-(--panel) px-3 py-2">
-                <Link href={`/lists/${list.id}`} className="font-medium">
-                  {list.name}
-                </Link>
-                <span className="ml-2 text-sm text-(--muted)">{list.leadCount} people</span>
+            {visible.map((list) => (
+              <li
+                key={list.id}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <Link href={`/lists/${list.id}`} className="font-medium">
+                    {list.name}
+                  </Link>
+                  <span className="ml-2 text-sm text-(--muted)">{list.leadCount} people</span>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 text-sm text-(--muted) underline"
+                  onClick={() => scheduleDelete({ kind: "list", id: list.id, name: list.name })}
+                >
+                  Delete
+                </button>
               </li>
             ))}
           </ul>

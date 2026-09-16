@@ -2,24 +2,37 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
+import { scheduleDelete, subscribePendingDelete } from "@/lib/client/pendingDelete";
 
 type Campaign = { id: string; name: string; status: string; enrollmentCount: number };
 
 export default function CampaignsPage() {
+  const router = useRouter();
   const [rows, setRows] = useState<Campaign[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [name, setName] = useState("LinkedIn sequence");
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
-  async function refresh() {
-    const res = await fetch("/api/campaigns");
-    setRows(await res.json());
-    setLoaded(true);
-  }
+  const visible = rows.filter((row) => !hiddenIds.has(row.id));
 
   useEffect(() => {
-    void refresh();
+    return subscribePendingDelete(({ hidden, committed }) => {
+      setHiddenIds(new Set(hidden.filter((item) => item.kind === "campaign").map((item) => item.id)));
+      if (committed?.kind === "campaign") {
+        setRows((current) => current.filter((row) => row.id !== committed.id));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const res = await fetch("/api/campaigns");
+      setRows(await res.json());
+      setLoaded(true);
+    })();
   }, []);
 
   async function create() {
@@ -29,7 +42,8 @@ export default function CampaignsPage() {
       body: JSON.stringify({ name, templateKey: "linkedin_only" }),
     });
     const data = await res.json();
-    window.location.href = `/campaigns/${data.id}`;
+    if (!res.ok) return;
+    router.push(`/campaigns/${data.id}`);
   }
 
   return (
@@ -58,23 +72,32 @@ export default function CampaignsPage() {
             Loading…
           </li>
         ) : null}
-        {loaded && rows.length === 0 ? (
+        {loaded && visible.length === 0 ? (
           <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
             No sequences yet. Create a draft above.
           </li>
         ) : null}
-        {rows.map((c) => (
-          <li key={c.id} className="flex items-center justify-between rounded-2xl border border-(--line) bg-(--panel) px-4 py-3">
-            <Link href={`/campaigns/${c.id}`} className="font-medium">
+        {visible.map((c) => (
+          <li key={c.id} className="flex items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3">
+            <Link href={`/campaigns/${c.id}`} className="min-w-0 font-medium">
               {c.name}
             </Link>
-            <span className="flex items-center gap-3 text-sm text-(--muted)">
+            <span className="flex shrink-0 items-center gap-3 text-sm text-(--muted)">
               <StatusBadge
                 tone={c.status === "running" ? "ok" : c.status === "paused" ? "wait" : "muted"}
               >
                 {c.status}
               </StatusBadge>
               {c.enrollmentCount} people
+              {c.status === "draft" ? (
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => scheduleDelete({ kind: "campaign", id: c.id, name: c.name })}
+                >
+                  Delete
+                </button>
+              ) : null}
             </span>
           </li>
         ))}

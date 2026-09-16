@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { AppShell, BackLink } from "@/components/AppShell";
 import { SequenceEditor, type EditorStep, type PreviewLead } from "@/components/SequenceEditor";
 import { StatusBadge } from "@/components/Toggle";
+import { scheduleDelete } from "@/lib/client/pendingDelete";
 
 type Campaign = {
   id: string;
@@ -120,6 +121,7 @@ function blankStep(kind: "connection" | "message", index: number): EditorStep {
 
 export default function CampaignDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const [data, setData] = useState<Campaign | null>(null);
   const [lists, setLists] = useState<Array<{ id: string; name: string }>>([]);
   const [listId, setListId] = useState("");
@@ -131,14 +133,17 @@ export default function CampaignDetailPage() {
   const [previewIndex, setPreviewIndex] = useState(0);
   const [outboxFilter, setOutboxFilter] = useState<OutboxFilter>("all");
 
-  async function refresh() {
-    const res = await fetch(`/api/campaigns/${params.id}`);
-    const body = (await res.json()) as Campaign;
+  function applyCampaign(body: Campaign) {
     setData(body);
     if (!dirty) {
       setName(body.name);
       setSteps(toEditor(body.steps));
     }
+  }
+
+  async function refresh() {
+    const res = await fetch(`/api/campaigns/${params.id}`);
+    applyCampaign((await res.json()) as Campaign);
   }
 
   useEffect(() => {
@@ -194,9 +199,12 @@ export default function CampaignDetailPage() {
       body: JSON.stringify({ listId }),
     });
     const body = await res.json();
-    if (!res.ok) setError(body.error);
+    if (!res.ok) {
+      setError(body.error);
+      return;
+    }
     setDirty(false);
-    await refresh();
+    if (body.campaign) applyCampaign(body.campaign);
   }
 
   async function start() {
@@ -204,37 +212,47 @@ export default function CampaignDetailPage() {
     if (dirty) await save();
     const res = await fetch(`/api/campaigns/${params.id}/start`, { method: "POST" });
     const body = await res.json();
-    if (!res.ok) setError(body.error);
-    await refresh();
+    if (!res.ok) {
+      setError(body.error);
+      return;
+    }
+    applyCampaign(body);
   }
 
   async function pause() {
-    await fetch(`/api/campaigns/${params.id}/pause`, { method: "POST" });
-    await refresh();
+    const res = await fetch(`/api/campaigns/${params.id}/pause`, { method: "POST" });
+    const body = await res.json();
+    if (res.ok) applyCampaign(body);
   }
 
-  async function deleteDraft() {
-    if (!window.confirm("Delete this draft? This cannot be undone.")) return;
-    setError(null);
-    const res = await fetch(`/api/campaigns/${params.id}`, { method: "DELETE" });
-    const body = await res.json();
-    if (!res.ok) {
-      setError(body.error ?? "Could not delete");
-      return;
-    }
-    window.location.href = "/campaigns";
+  function deleteDraft() {
+    if (!data) return;
+    scheduleDelete({ kind: "campaign", id: data.id, name: data.name });
+    router.replace("/campaigns");
   }
 
   async function stopEnrollment(enrollmentId: string) {
     setError(null);
+    setData((current) =>
+      current
+        ? {
+            ...current,
+            enrollments: current.enrollments.map((row) =>
+              row.id === enrollmentId ? { ...row, status: "stopped" } : row,
+            ),
+          }
+        : current,
+    );
     const res = await fetch("/api/inbox/stop", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ enrollmentId }),
     });
     const body = await res.json();
-    if (!res.ok) setError(body.error);
-    await refresh();
+    if (!res.ok) {
+      setError(body.error);
+      await refresh();
+    }
   }
 
   if (!data) {
@@ -292,7 +310,7 @@ export default function CampaignDetailPage() {
           </button>
         ) : null}
         {data.status === "draft" ? (
-          <button type="button" onClick={() => void deleteDraft()} className={`btn-danger ${ACTION_BTN}`}>
+          <button type="button" onClick={deleteDraft} className={`btn-danger ${ACTION_BTN}`}>
             Delete draft
           </button>
         ) : null}
