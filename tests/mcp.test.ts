@@ -221,7 +221,7 @@ describe("MCP", () => {
     const steps = create?.inputSchema.properties.steps as {
       items: {
         properties: {
-          action: { enum: string[] };
+          action: { enum: readonly string[] };
           bodyTemplate: { description: string };
           imageUrl: { description: string };
         };
