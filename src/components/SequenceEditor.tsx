@@ -170,6 +170,7 @@ export function SequenceEditor({
               <section className="rounded-lg border border-(--line) bg-(--panel) p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{index + 1}.</p>
                     {editable ? (
                       <select
                         className="rounded border border-(--line) bg-(--input) px-2 py-1 text-sm"
@@ -182,7 +183,6 @@ export function SequenceEditor({
                     ) : (
                       <p className="text-sm">{kindLabel(kindOf(step))}</p>
                     )}
-                    <p className="font-medium">{index + 1}.</p>
                     {index > 0 ? (
                       <label className="ml-2 flex items-center gap-2 text-sm">
                         <span className="text-(--muted)">Wait</span>
