@@ -174,7 +174,7 @@ describe("GTM — gift removal", () => {
       }),
     ).rejects.toThrow(/gift steps are not supported/);
     await expect(
-      callMcpTool(ctx, "create_campaign", {
+      callMcpTool(ctx, "create_sequence", {
         name: "Cupcakes",
         steps: [
           {
@@ -263,8 +263,8 @@ describe("GTM — MCP tools", () => {
         "update_list",
         "remove_lead_from_list",
         "delete_list",
-        "update_campaign",
-        "delete_campaign",
+        "update_sequence",
+        "delete_sequence",
         "reply_inbox",
         "get_analytics",
         "export_leads",

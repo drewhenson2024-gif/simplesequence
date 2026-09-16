@@ -17,9 +17,9 @@ GTM sequencer for LinkedIn. Codex/Claude send LinkedIn profile URLs over MCP (`i
 }
 ```
 
-Tools: `import_leads`, `list_lists`, `get_list`, `update_list`, `remove_lead_from_list`, `delete_list`, `create_campaign`, `update_campaign`, `delete_campaign`, `add_leads_to_campaign`, `get_campaign`, `list_campaigns`, `start_campaign`, `pause_campaign`, `resume_campaign`, `connect_status`, `get_inbox`, `reply_inbox`, `stop_lead`, `export_leads`, `get_analytics`, `suggest_learnings`, `apply_learnings`.
+Tools: `import_leads`, `list_lists`, `get_list`, `update_list`, `remove_lead_from_list`, `delete_list`, `create_sequence`, `update_sequence`, `delete_sequence`, `add_leads_to_sequence`, `get_sequence`, `list_sequences`, `start_sequence`, `pause_sequence`, `resume_sequence`, `connect_status`, `get_inbox`, `reply_inbox`, `stop_lead`, `export_leads`, `get_analytics`, `suggest_learnings`, `apply_learnings`.
 
-`create_campaign` always saves a draft. Sending is `start_campaign` (agent or human). Import, export, reply, and learnings never start a campaign. `apply_learnings` creates a new draft. Connecting LinkedIn is Settings in the browser.
+`create_sequence` always saves a draft. Sending is `start_sequence` (agent or human). Import, export, reply, and learnings never start a sequence. `apply_learnings` creates a new draft. Connecting LinkedIn is Settings in the browser. `update_sequence` saves the same step fields as the sequence editor.
 
 ## Tests
 

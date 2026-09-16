@@ -25,7 +25,7 @@ We do not search for people. We do not run an in-market Signals watcher. We do n
 
 - Analytics page is live (`/analytics`). Do not fake rates. AI copy from stats is Coming soon until a model is wired. Breakout: `plans/self-improving-sequences.md`.
 
-MCP may draft and may run the rest of the loop (`start_campaign`, inbox reply, analytics, list/campaign rename and delete). MCP may never auto-send as a side effect of import. `apply_learnings` writes a new draft only. `delete_campaign` is draft-only. Connecting LinkedIn is Settings in the browser.
+MCP may draft and may run the rest of the loop (`start_sequence`, inbox reply, analytics, list/sequence rename and delete). MCP may never auto-send as a side effect of import. `apply_learnings` writes a new draft only. `delete_sequence` is draft-only. Connecting LinkedIn is Settings in the browser.
 
 Never show “stub” on the site.
 

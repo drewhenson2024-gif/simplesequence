@@ -39,25 +39,61 @@ const importSchema = z
     message: "urls or content required",
   });
 
-const createCampaignSchema = z.object({
+const MERGE_FIELDS =
+  "{{first_name}} {{last_name}} {{full_name}} {{company}} {{title}} {{headline}} {{location}} {{about}} {{profile_url}}";
+
+const stepDraftSchema = z.object({
+  stepIndex: z.number().int().nonnegative(),
+  channel: z.enum(["linkedin"]),
+  action: z.enum(["connection", "message"]),
+  delayHours: z.number().nonnegative(),
+  bodyTemplate: z.string(),
+  subjectTemplate: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
+  enabled: z.boolean().optional(),
+  skipOverdueHours: z.number().int().nonnegative().optional(),
+});
+
+const stepsSchema = z.array(stepDraftSchema).optional();
+
+const stepJsonSchema = {
+  type: "object",
+  properties: {
+    stepIndex: {
+      type: "integer",
+      minimum: 0,
+      description: "0-based order. Send the full list to add, insert, remove, or reorder — same as Save on the sequence page.",
+    },
+    channel: { type: "string", enum: ["linkedin"] },
+    action: {
+      type: "string",
+      enum: ["connection", "message"],
+      description: "LinkedIn · Connection or LinkedIn · Message",
+    },
+    delayHours: {
+      type: "number",
+      minimum: 0,
+      description: "Wait before this stage. First stage is usually 0. Days are hours × 24.",
+    },
+    bodyTemplate: {
+      type: "string",
+      description: `Copy. Merge fields: ${MERGE_FIELDS}`,
+    },
+    imageUrl: {
+      type: "string",
+      description: "Optional LinkedIn image URL",
+    },
+    subjectTemplate: { type: "string" },
+    enabled: { type: "boolean" },
+  },
+  required: ["stepIndex", "channel", "action", "delayHours", "bodyTemplate"],
+} as const;
+
+const createSequenceSchema = z.object({
   name: z.string().min(1),
   template_key: z.enum(["linkedin_only"]).optional(),
   linkedin_sender_id: z.string().nullable().optional(),
-  steps: z
-    .array(
-      z.object({
-        stepIndex: z.number().int().nonnegative(),
-        channel: z.enum(["linkedin"]),
-        action: z.enum(["connection", "message"]),
-        delayHours: z.number().nonnegative(),
-        bodyTemplate: z.string(),
-        subjectTemplate: z.string().nullable().optional(),
-        imageUrl: z.string().nullable().optional(),
-        enabled: z.boolean().optional(),
-        skipOverdueHours: z.number().int().nonnegative().optional(),
-      }),
-    )
-    .optional(),
+  steps: stepsSchema,
 });
 
 const listIdSchema = z.object({ list_id: z.string() });
@@ -65,25 +101,25 @@ const updateListSchema = z.object({ list_id: z.string(), name: z.string().min(1)
 const removeLeadSchema = z.object({ list_id: z.string(), lead_id: z.string() });
 
 const addLeadsSchema = z.object({
-  campaign_id: z.string(),
+  sequence_id: z.string(),
   list_id: z.string().optional(),
   content: z.string().optional(),
   urls: z.array(z.string()).optional(),
   format: z.enum(["csv", "markdown", "urls", "auto"]).optional(),
 });
 
-const idSchema = z.object({ campaign_id: z.string() });
+const idSchema = z.object({ sequence_id: z.string() });
 const stopSchema = z.object({ enrollment_id: z.string() });
 const replySchema = z.object({
   enrollment_id: z.string(),
   body: z.string().min(1),
   channel: z.enum(["linkedin"]).optional(),
 });
-const updateCampaignSchema = z.object({
-  campaign_id: z.string(),
+const updateSequenceSchema = z.object({
+  sequence_id: z.string(),
   name: z.string().optional(),
   linkedin_sender_id: z.string().nullable().optional(),
-  steps: createCampaignSchema.shape.steps,
+  steps: stepsSchema,
 });
 
 export const MCP_TOOLS = [
@@ -149,93 +185,103 @@ export const MCP_TOOLS = [
     },
   },
   {
-    name: "create_campaign",
-    description: "Create a draft sequence. Starts empty unless you pass steps. Never sends.",
+    name: "create_sequence",
+    description:
+      "Create a draft sequence (same as Create draft on Sequences). Starts empty unless you pass steps. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string" },
         template_key: { type: "string", enum: ["linkedin_only"] },
-        steps: { type: "array" },
+        steps: {
+          type: "array",
+          description: "Full stage list, same fields as Save on the sequence page.",
+          items: stepJsonSchema,
+        },
       },
       required: ["name"],
     },
   },
   {
-    name: "update_campaign",
-    description: "Edit a draft sequence (name or steps). Running sequences cannot be edited. Never sends.",
+    name: "update_sequence",
+    description:
+      "Save a draft sequence (name or full steps list). Same as Save changes. Running sequences cannot be edited. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
-        campaign_id: { type: "string" },
+        sequence_id: { type: "string" },
         name: { type: "string" },
-        steps: { type: "array" },
+        steps: {
+          type: "array",
+          description: "Replace every stage. Omit a stage to remove it; insert in the list to add one.",
+          items: stepJsonSchema,
+        },
       },
-      required: ["campaign_id"],
+      required: ["sequence_id"],
     },
   },
   {
-    name: "delete_campaign",
+    name: "delete_sequence",
     description: "Delete a draft sequence. Running or paused sequences cannot be deleted — pause instead. Never sends.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
   {
-    name: "add_leads_to_campaign",
-    description: "Enroll a list or LinkedIn profile URLs onto a campaign as pending. Never sends.",
+    name: "add_leads_to_sequence",
+    description: "Enroll a list or LinkedIn profile URLs onto a sequence as pending. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
-        campaign_id: { type: "string" },
+        sequence_id: { type: "string" },
         list_id: { type: "string" },
         urls: { type: "array", items: { type: "string" } },
         content: { type: "string" },
       },
-      required: ["campaign_id"],
+      required: ["sequence_id"],
     },
   },
   {
-    name: "get_campaign",
-    description: "Get campaign steps, enrollments, and sample merge-field previews.",
+    name: "get_sequence",
+    description: "Get sequence steps, enrollments, and sample merge-field previews.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
   {
-    name: "list_campaigns",
-    description: "List campaigns in the workspace.",
+    name: "list_sequences",
+    description: "List sequences in the workspace.",
     inputSchema: { type: "object", properties: {} },
   },
   {
-    name: "start_campaign",
-    description: "Explicit human/agent start. Drafts do not send without this.",
+    name: "start_sequence",
+    description: "Explicit Start. Drafts do not send without this.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
   {
-    name: "pause_campaign",
-    description: "Pause a running campaign.",
+    name: "pause_sequence",
+    description: "Pause a running sequence.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
   {
-    name: "resume_campaign",
-    description: "Resume a paused campaign.",
+    name: "resume_sequence",
+    description: "Resume a paused sequence.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
   {
@@ -250,7 +296,7 @@ export const MCP_TOOLS = [
   },
   {
     name: "reply_inbox",
-    description: "Reply to one person in inbox. Does not start a campaign. Sandbox still dry-runs.",
+    description: "Reply to one person in inbox. Does not start a sequence. Sandbox still dry-runs.",
     inputSchema: {
       type: "object",
       properties: {
@@ -286,20 +332,20 @@ export const MCP_TOOLS = [
   },
   {
     name: "suggest_learnings",
-    description: "Suggest copy/step changes from sent jobs + replies. Never starts a campaign.",
+    description: "Suggest copy/step changes from sent jobs + replies. Never starts a sequence.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
   {
     name: "apply_learnings",
-    description: "Apply winning patterns as a new draft campaign. Never mutates a running sequence. Never auto-starts.",
+    description: "Apply winning patterns as a new draft sequence. Never mutates a running sequence. Never auto-starts.",
     inputSchema: {
       type: "object",
-      properties: { campaign_id: { type: "string" } },
-      required: ["campaign_id"],
+      properties: { sequence_id: { type: "string" } },
+      required: ["sequence_id"],
     },
   },
 ] as const;
@@ -334,8 +380,8 @@ export async function callMcpTool(
     }
     case "delete_list":
       return deleteList(ctx, listIdSchema.parse(args).list_id);
-    case "create_campaign": {
-      const input = createCampaignSchema.parse(args);
+    case "create_sequence": {
+      const input = createSequenceSchema.parse(args);
       return createCampaign(ctx, {
         name: input.name,
         templateKey: input.template_key,
@@ -346,9 +392,9 @@ export async function callMcpTool(
         })),
       });
     }
-    case "update_campaign": {
-      const input = updateCampaignSchema.parse(args);
-      return updateCampaign(ctx, input.campaign_id, {
+    case "update_sequence": {
+      const input = updateSequenceSchema.parse(args);
+      return updateCampaign(ctx, input.sequence_id, {
         name: input.name,
         linkedinSenderId: input.linkedin_sender_id,
         steps: input.steps?.map((s) => ({
@@ -357,27 +403,27 @@ export async function callMcpTool(
         })),
       });
     }
-    case "delete_campaign":
-      return deleteCampaign(ctx, idSchema.parse(args).campaign_id);
-    case "add_leads_to_campaign": {
+    case "delete_sequence":
+      return deleteCampaign(ctx, idSchema.parse(args).sequence_id);
+    case "add_leads_to_sequence": {
       const input = addLeadsSchema.parse(args);
-      return addLeadsToCampaign(ctx, input.campaign_id, {
+      return addLeadsToCampaign(ctx, input.sequence_id, {
         listId: input.list_id,
         content: input.content,
         urls: input.urls,
         format: input.format,
       });
     }
-    case "get_campaign":
-      return getCampaign(ctx, idSchema.parse(args).campaign_id);
-    case "list_campaigns":
+    case "get_sequence":
+      return getCampaign(ctx, idSchema.parse(args).sequence_id);
+    case "list_sequences":
       return listCampaigns(ctx);
-    case "start_campaign":
-      return startCampaign(ctx, idSchema.parse(args).campaign_id);
-    case "pause_campaign":
-      return pauseCampaign(ctx, idSchema.parse(args).campaign_id);
-    case "resume_campaign":
-      return resumeCampaign(ctx, idSchema.parse(args).campaign_id);
+    case "start_sequence":
+      return startCampaign(ctx, idSchema.parse(args).sequence_id);
+    case "pause_sequence":
+      return pauseCampaign(ctx, idSchema.parse(args).sequence_id);
+    case "resume_sequence":
+      return resumeCampaign(ctx, idSchema.parse(args).sequence_id);
     case "connect_status":
       return connectStatus(ctx);
     case "get_inbox":
@@ -397,9 +443,9 @@ export async function callMcpTool(
     case "get_analytics":
       return workspaceAnalytics(ctx);
     case "suggest_learnings":
-      return suggestLearnings(ctx, idSchema.parse(args).campaign_id);
+      return suggestLearnings(ctx, idSchema.parse(args).sequence_id);
     case "apply_learnings":
-      return applyLearnings(ctx, idSchema.parse(args).campaign_id);
+      return applyLearnings(ctx, idSchema.parse(args).sequence_id);
     case "connect_linkedin":
       return connectAccount(ctx, "linkedin");
     default:

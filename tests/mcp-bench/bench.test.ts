@@ -94,25 +94,25 @@ async function saveDraft(
     format: input.format ?? "csv",
     list_name: input.name,
   })) as { listId: string };
-  const created = (await callMcpTool(ctx, "create_campaign", {
+  const created = (await callMcpTool(ctx, "create_sequence", {
     name: input.name,
     template_key: input.template_key,
     steps: input.steps,
   })) as { id: string; status: string };
   expect(created.status).toBe("draft");
-  await callMcpTool(ctx, "add_leads_to_campaign", {
-    campaign_id: created.id,
+  await callMcpTool(ctx, "add_leads_to_sequence", {
+    sequence_id: created.id,
     list_id: imported.listId,
   });
-  const campaign = (await callMcpTool(ctx, "get_campaign", { campaign_id: created.id })) as CampaignView;
+  const campaign = (await callMcpTool(ctx, "get_sequence", { sequence_id: created.id })) as CampaignView;
   assertDraftSequence(campaign, input.expectedLeads);
   return campaign;
 }
 
 describe("mcp-bench coverage", () => {
-  it("exposes import and campaign tools, not people search", () => {
+  it("exposes import and sequence tools, not people search", () => {
     const names = MCP_TOOLS.map((t) => t.name);
-    expect(names).toEqual(expect.arrayContaining(["import_leads", "create_campaign", "start_campaign"]));
+    expect(names).toEqual(expect.arrayContaining(["import_leads", "create_sequence", "start_sequence"]));
     expect(names).not.toContain("search_people");
     expect(names).not.toContain("research_leads");
     expect(names).not.toContain("qualify_leads");
@@ -174,15 +174,15 @@ describe("Campaign creation (8)", () => {
       content: csvLeads(3),
       list_name: "Basic LinkedIn default",
     })) as { listId: string };
-    const created = (await callMcpTool(ctx, "create_campaign", {
+    const created = (await callMcpTool(ctx, "create_sequence", {
       name: "Basic LinkedIn default",
     })) as { id: string; status: string };
     expect(created.status).toBe("draft");
-    await callMcpTool(ctx, "add_leads_to_campaign", {
-      campaign_id: created.id,
+    await callMcpTool(ctx, "add_leads_to_sequence", {
+      sequence_id: created.id,
       list_id: imported.listId,
     });
-    const campaign = (await callMcpTool(ctx, "get_campaign", { campaign_id: created.id })) as CampaignView;
+    const campaign = (await callMcpTool(ctx, "get_sequence", { sequence_id: created.id })) as CampaignView;
     expect(campaign.status).toBe("draft");
     expect(campaign.enrollments).toHaveLength(3);
     expect(campaign.steps).toEqual([]);

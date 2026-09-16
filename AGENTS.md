@@ -28,7 +28,7 @@ MCP: `https://simplesequence-three.vercel.app/mcp` with `X-API-Key`.
 
 Hexagonal core in `src/lib/app/commands.ts`. UI, HTTP, and MCP all call the same commands.
 
-- Campaigns are created as `draft`. `start_campaign` is explicit. Sequences are LinkedIn connection + messages only — no email.
+- Sequences are created as `draft`. `start_sequence` is explicit. Sequences are LinkedIn connection + messages only — no email.
 - Unipile port: `MockUnipile` unless `UNIPILE_API_KEY` + `UNIPILE_DSN` are set.
 - People come in as LinkedIn profile URLs (paste or MCP `import_leads` with `urls`). Import looks up name, title, company, headline, location, and about from the profile. No people search, no Signals watcher.
 - One in-flight send per sender. Pace + deterministic jitter. No default daily ceilings.
@@ -37,8 +37,8 @@ Hexagonal core in `src/lib/app/commands.ts`. UI, HTTP, and MCP all call the same
 
 ## MCP
 
-`POST /mcp` with `X-API-Key`. Tools: `import_leads`, `list_lists`, `get_list`, `update_list`, `remove_lead_from_list`, `delete_list`, `create_campaign`, `update_campaign`, `delete_campaign`, `add_leads_to_campaign`, `get_campaign`, `list_campaigns`, `start_campaign`, `pause_campaign`, `resume_campaign`, `connect_status`, `get_inbox`, `reply_inbox`, `stop_lead`, `export_leads`, `get_analytics`, `suggest_learnings`, `apply_learnings`. Import / export / reply / learnings never start a campaign. Campaigns stay `draft` until `start_campaign`. Connecting LinkedIn is Settings in the browser. `apply_learnings` writes a new draft and never auto-starts. `delete_campaign` is draft-only.
+`POST /mcp` with `X-API-Key`. Tools: `import_leads`, `list_lists`, `get_list`, `update_list`, `remove_lead_from_list`, `delete_list`, `create_sequence`, `update_sequence`, `delete_sequence`, `add_leads_to_sequence`, `get_sequence`, `list_sequences`, `start_sequence`, `pause_sequence`, `resume_sequence`, `connect_status`, `get_inbox`, `reply_inbox`, `stop_lead`, `export_leads`, `get_analytics`, `suggest_learnings`, `apply_learnings`. Import / export / reply / learnings never start a sequence. Sequences stay `draft` until `start_sequence`. Connecting LinkedIn is Settings in the browser. `apply_learnings` writes a new draft and never auto-starts. `delete_sequence` is draft-only. `create_sequence` / `update_sequence` take the same step fields as Save on the sequence page.
 
 ## Tests
 
-`pnpm test` — parser + FSM property/unit tests, ingest, send safety, MCP always-draft, `tests/mcp-bench` import/campaign slices, `tests/gtm.test.ts` export / analytics / learnings.
+`pnpm test` — parser + FSM property/unit tests, ingest, send safety, MCP always-draft, `tests/mcp-bench` import/sequence slices, `tests/gtm.test.ts` export / analytics / learnings.
