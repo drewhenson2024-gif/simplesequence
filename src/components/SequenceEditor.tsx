@@ -168,51 +168,48 @@ export function SequenceEditor({
                 </div>
               ) : null}
               <section className="rounded-lg border border-(--line) bg-(--panel) p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="font-medium">{index + 1}.</p>
-                  {editable && steps.length > 1 ? (
-                    <button type="button" className="btn-danger rounded-2xl px-3 py-1 text-sm" onClick={() => remove(index)}>
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-                <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-                  {editable ? (
-                    <label className="text-sm">
-                      <span className="text-(--muted)">Type</span>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {editable ? (
                       <select
-                        className="ml-2 rounded border border-(--line) bg-(--input) px-2 py-1"
+                        className="rounded border border-(--line) bg-(--input) px-2 py-1 text-sm"
                         value={kindOf(step)}
                         onChange={(e) => patch(index, applyKind(e.target.value as Kind))}
                       >
                         <option value="connection">LinkedIn · Connection</option>
                         <option value="message">LinkedIn · Message</option>
                       </select>
-                    </label>
-                  ) : (
-                    <p className="text-sm">Type: {kindLabel(kindOf(step))}</p>
-                  )}
-                  {index > 0 ? (
-                    <label className="flex items-center gap-2 text-sm">
-                      <span className="text-(--muted)">Wait</span>
-                      <input
-                        type="number"
-                        min={0}
-                        disabled={!editable}
-                        className="w-16 rounded border border-(--line) bg-(--input) px-2 py-1"
-                        value={parts.value}
-                        onChange={(e) => patch(index, { delayHours: toHours(Number(e.target.value) || 0, parts.unit) })}
-                      />
-                      <select
-                        disabled={!editable}
-                        className="rounded border border-(--line) bg-(--input) px-2 py-1"
-                        value={parts.unit}
-                        onChange={(e) => patch(index, { delayHours: toHours(parts.value, e.target.value as "h" | "d") })}
-                      >
-                        <option value="h">hours</option>
-                        <option value="d">days</option>
-                      </select>
-                    </label>
+                    ) : (
+                      <p className="text-sm">{kindLabel(kindOf(step))}</p>
+                    )}
+                    <p className="font-medium">{index + 1}.</p>
+                    {index > 0 ? (
+                      <label className="ml-2 flex items-center gap-2 text-sm">
+                        <span className="text-(--muted)">Wait</span>
+                        <input
+                          type="number"
+                          min={0}
+                          disabled={!editable}
+                          className="w-16 rounded border border-(--line) bg-(--input) px-2 py-1"
+                          value={parts.value}
+                          onChange={(e) => patch(index, { delayHours: toHours(Number(e.target.value) || 0, parts.unit) })}
+                        />
+                        <select
+                          disabled={!editable}
+                          className="rounded border border-(--line) bg-(--input) px-2 py-1"
+                          value={parts.unit}
+                          onChange={(e) => patch(index, { delayHours: toHours(parts.value, e.target.value as "h" | "d") })}
+                        >
+                          <option value="h">hours</option>
+                          <option value="d">days</option>
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                  {editable ? (
+                    <button type="button" className="btn-danger rounded-2xl px-3 py-1 text-sm" onClick={() => remove(index)}>
+                      Remove
+                    </button>
                   ) : null}
                 </div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
