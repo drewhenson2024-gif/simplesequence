@@ -49,6 +49,9 @@ export const leads = sqliteTable("leads", {
   fullName: text("full_name").notNull().default(""),
   company: text("company").notNull().default(""),
   title: text("title").notNull().default(""),
+  headline: text("headline").notNull().default(""),
+  location: text("location").notNull().default(""),
+  about: text("about").notNull().default(""),
   email: text("email"),
   linkedinUrl: text("linkedin_url"),
   linkedinUrlNormalized: text("linkedin_url_normalized"),
@@ -74,8 +77,6 @@ export const campaigns = sqliteTable("campaigns", {
   status: text("status").notNull(),
   templateKey: text("template_key"),
   linkedinSenderId: text("linkedin_sender_id"),
-  emailSenderId: text("email_sender_id"),
-  giftSenderId: text("gift_sender_id"),
   createdAt: text("created_at").notNull(),
 });
 
@@ -91,8 +92,6 @@ export const sequenceSteps = sqliteTable("sequence_steps", {
   enabled: integer("enabled").notNull().default(1),
   skipOverdueHours: integer("skip_overdue_hours").notNull().default(72),
   imageUrl: text("image_url"),
-  giftItem: text("gift_item"),
-  giftNote: text("gift_note"),
 });
 
 export const enrollments = sqliteTable("enrollments", {

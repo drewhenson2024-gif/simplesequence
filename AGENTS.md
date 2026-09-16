@@ -1,7 +1,17 @@
 # SimpleSequence — agent notes
 
 The product is the live site: https://simplesequence-three.vercel.app
+Every change must land there — commit and push so Vercel deploys. Do not leave product work only on disk.
 Do not use Cursor Cloud Agents. Do not run or verify against localhost. Do not put this in the resume / project-death repo. Drew creates the GitHub remote in the browser if it does not exist.
+
+## Steering
+
+Always-on Cursor rules in `.cursor/rules/`:
+
+- `design-approval.mdc` — for every design or approach change, list 2–4 distinct options, recommend one, and **wait for Drew to approve** before writing code. Recommend on product fit. Build time / file count is not a factor. When done, report which option shipped.
+- `product-loop.mdc` — finished-product chrome (import LinkedIn URLs → sequence → inbox → Analytics). Marketing page is public; Open app is the only way into the app. Coming soon for blocked vendors. Do not fake live data.
+
+Parked: `plans/self-improving-sequences.md` — Analytics chrome is the board. AI copy from stats (C) waits on a model. Never auto-rewrite a running sequence.
 
 ## Run
 
@@ -18,18 +28,17 @@ MCP: `https://simplesequence-three.vercel.app/mcp` with `X-API-Key`.
 
 Hexagonal core in `src/lib/app/commands.ts`. UI, HTTP, and MCP all call the same commands.
 
-- Campaigns are created as `draft`. `start_campaign` is explicit.
+- Campaigns are created as `draft`. `start_campaign` is explicit. Sequences are LinkedIn connection + messages only — no email.
 - Unipile port: `MockUnipile` unless `UNIPILE_API_KEY` + `UNIPILE_DSN` are set.
-- DataPort waterfall: Apollo first if `APOLLO_API_KEY`, then stub catalog. Not 50 live vendors. Source name is stored per lead.
-- GiftPort: `MockGift` unless `POSTAL_API_KEY` / `SENDOSO_API_KEY` and `GIFT_API_URL`. Mock records the gift; never charges a courier without keys.
+- People come in as LinkedIn profile URLs (paste or MCP `import_leads` with `urls`). Import looks up name, title, company, headline, location, and about from the profile. No people search, no Signals watcher.
 - One in-flight send per sender. Pace + deterministic jitter. No default daily ceilings.
 - Stop on reply, bounce, or provider restriction.
-- Prospecting, research, qualify, signals, and CRM export never send. Learnings apply as a new draft only.
+- Import, CRM export, and learnings never send. Learnings apply as a new draft only.
 
 ## MCP
 
-`POST /mcp` with `X-API-Key`. Tools: `import_leads`, `create_campaign`, `add_leads_to_campaign`, `get_campaign`, `list_campaigns`, `start_campaign`, `pause_campaign`, `resume_campaign`, `connect_status`, `get_inbox`, `stop_lead`, `search_people`, `research_leads`, `qualify_leads`, `prompt_to_campaign`, `export_leads`, `list_signals`, `ingest_signals`, `suggest_learnings`, `apply_learnings`. Prospecting / signals / qualify / export never send. Campaigns stay `draft` until `start_campaign`. Gift steps stay draft. `apply_learnings` writes a new draft and never auto-starts.
+`POST /mcp` with `X-API-Key`. Tools: `import_leads`, `list_lists`, `get_list`, `update_list`, `remove_lead_from_list`, `delete_list`, `create_campaign`, `update_campaign`, `delete_campaign`, `add_leads_to_campaign`, `get_campaign`, `list_campaigns`, `start_campaign`, `pause_campaign`, `resume_campaign`, `connect_status`, `get_inbox`, `reply_inbox`, `stop_lead`, `export_leads`, `get_analytics`, `suggest_learnings`, `apply_learnings`. Import / export / reply / learnings never start a campaign. Campaigns stay `draft` until `start_campaign`. Connecting LinkedIn is Settings in the browser. `apply_learnings` writes a new draft and never auto-starts. `delete_campaign` is draft-only.
 
 ## Tests
 
-`pnpm test` — parser + FSM property/unit tests, ingest, send safety, MCP always-draft, `tests/mcp-bench` Cluster slices, `tests/gtm.test.ts` scoring / signals / learnings / draft-only gift.
+`pnpm test` — parser + FSM property/unit tests, ingest, send safety, MCP always-draft, `tests/mcp-bench` import/campaign slices, `tests/gtm.test.ts` export / analytics / learnings.

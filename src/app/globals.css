@@ -2,15 +2,16 @@
 
 :root {
   color-scheme: dark;
-  --ink: #f3ece0;
-  --paper: #12100d;
-  --panel: #1c1814;
-  --input: #161410;
-  --line: #3d362c;
-  --ochre: #e08a32;
-  --muted: #a39888;
-  --danger: #f0a8a0;
-  --ok: #b7c77a;
+  --ink: #f4f7fb;
+  --paper: #070b12;
+  --panel: #0d1520;
+  --input: #0a111a;
+  --line: #1c2a3d;
+  --ochre: #0a66c2;
+  --accent-hover: #378fe9;
+  --muted: #8b9cb3;
+  --danger: #e8a0a0;
+  --ok: #6fbf8a;
 }
 
 @layer base {
@@ -18,14 +19,14 @@
   body {
     background: var(--paper);
     color: var(--ink);
-    font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   }
 
   h1,
   h2,
   h3 {
-    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, serif;
-    letter-spacing: -0.02em;
+    font-weight: 500;
+    letter-spacing: -0.03em;
   }
 
   a {
@@ -44,4 +45,32 @@
   textarea::placeholder {
     color: var(--muted);
   }
+
+  :focus-visible {
+    outline: 2px solid var(--ochre);
+    outline-offset: 2px;
+  }
+}
+
+.btn-primary {
+  background: var(--ochre);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-danger {
+  background: #c62828;
+  color: #fff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a11f1f;
+}
+
+.dot-grid {
+  background-image: radial-gradient(circle at 1px 1px, #1c2a3d 1px, transparent 0);
+  background-size: 22px 22px;
 }

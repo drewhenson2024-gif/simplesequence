@@ -6,7 +6,7 @@ import { withCommand } from "@/lib/http/respond";
 const schema = z.object({
   enrollmentId: z.string(),
   body: z.string().min(1),
-  channel: z.enum(["linkedin", "email"]).optional(),
+  channel: z.enum(["linkedin"]).optional(),
 });
 
 export async function POST(req: Request) {

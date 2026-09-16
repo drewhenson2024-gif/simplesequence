@@ -1,5 +1,5 @@
-export type SequenceChannel = "linkedin" | "email" | "gift";
-export type SequenceAction = "connection" | "message" | "email" | "gift";
+export type SequenceChannel = "linkedin";
+export type SequenceAction = "connection" | "message";
 
 export type SequenceStepDraft = {
   stepIndex: number;
@@ -11,11 +11,9 @@ export type SequenceStepDraft = {
   enabled?: boolean;
   skipOverdueHours?: number;
   imageUrl?: string | null;
-  giftItem?: string | null;
-  giftNote?: string | null;
 };
 
-export type TemplateKey = "linkedin_only" | "email_only" | "mixed";
+export type TemplateKey = "linkedin_only";
 
 export type LeadFields = {
   firstName: string;
@@ -23,12 +21,23 @@ export type LeadFields = {
   fullName: string;
   company: string;
   title: string;
+  headline: string;
+  location: string;
+  about: string;
   openingLine: string;
   email: string | null;
   linkedinUrl: string | null;
+  profileUrl: string | null;
 };
 
-const VARS = ["first_name", "company", "title", "opening_line", "last_name", "full_name"] as const;
+export type VariableGroup = { heading: string; fields: readonly string[] };
+
+/** Identity / Role / About, A–Z inside each group. */
+export const VARIABLE_GROUPS: readonly VariableGroup[] = [
+  { heading: "Identity", fields: ["first_name", "full_name", "last_name"] },
+  { heading: "Role", fields: ["company", "headline", "location", "title"] },
+  { heading: "About", fields: ["about", "profile_url"] },
+];
 
 export function renderTemplate(template: string, lead: LeadFields): string {
   return template.replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, key: string) => {
@@ -44,6 +53,14 @@ export function renderTemplate(template: string, lead: LeadFields): string {
         return lead.company;
       case "title":
         return lead.title;
+      case "headline":
+        return lead.headline;
+      case "location":
+        return lead.location;
+      case "about":
+        return lead.about;
+      case "profile_url":
+        return lead.profileUrl || lead.linkedinUrl || "";
       case "opening_line":
         return lead.openingLine;
       default:
@@ -53,65 +70,17 @@ export function renderTemplate(template: string, lead: LeadFields): string {
 }
 
 export function templateVariables(): readonly string[] {
-  return VARS;
+  return VARIABLE_GROUPS.flatMap((group) => group.fields);
 }
 
-export function stepsForTemplate(key: TemplateKey): SequenceStepDraft[] {
-  if (key === "linkedin_only") {
-    return [
-      {
-        stepIndex: 0,
-        channel: "linkedin",
-        action: "connection",
-        delayHours: 0,
-        bodyTemplate: "Hi {{first_name}} — {{opening_line}}",
-        subjectTemplate: null,
-      },
-      {
-        stepIndex: 1,
-        channel: "linkedin",
-        action: "message",
-        delayHours: 24,
-        bodyTemplate: "Hi {{first_name}}, following up from {{company}}. Would love 15 minutes if useful.",
-        subjectTemplate: null,
-      },
-      {
-        stepIndex: 2,
-        channel: "linkedin",
-        action: "message",
-        delayHours: 72,
-        bodyTemplate: "Hi {{first_name}}, last note from me. Happy to close the loop if now is not the time.",
-        subjectTemplate: null,
-      },
-    ];
-  }
-  if (key === "email_only") {
-    return [
-      {
-        stepIndex: 0,
-        channel: "email",
-        action: "email",
-        delayHours: 0,
-        bodyTemplate: "Hi {{first_name}},\n\n{{opening_line}}\n\nWorth a short call?",
-        subjectTemplate: "{{first_name}} / {{company}}",
-      },
-      {
-        stepIndex: 1,
-        channel: "email",
-        action: "email",
-        delayHours: 72,
-        bodyTemplate: "Hi {{first_name}}, bumping this in case it landed at a busy time.",
-        subjectTemplate: "Re: {{company}}",
-      },
-    ];
-  }
+export function stepsForTemplate(_key: TemplateKey = "linkedin_only"): SequenceStepDraft[] {
   return [
     {
       stepIndex: 0,
       channel: "linkedin",
       action: "connection",
       delayHours: 0,
-      bodyTemplate: "Hi {{first_name}} — {{opening_line}}",
+      bodyTemplate: "Hi {{first_name}} — {{title}} at {{company}}",
       subjectTemplate: null,
     },
     {
@@ -119,16 +88,16 @@ export function stepsForTemplate(key: TemplateKey): SequenceStepDraft[] {
       channel: "linkedin",
       action: "message",
       delayHours: 24,
-      bodyTemplate: "Thanks for connecting, {{first_name}}. {{opening_line}}",
+      bodyTemplate: "Hi {{first_name}}, following up from {{company}}. Would love 15 minutes if useful.",
       subjectTemplate: null,
     },
     {
       stepIndex: 2,
-      channel: "email",
-      action: "email",
-      delayHours: 48,
-      bodyTemplate: "Hi {{first_name}},\n\nTried you on LinkedIn as well. {{opening_line}}",
-      subjectTemplate: "{{first_name}} — {{company}}",
+      channel: "linkedin",
+      action: "message",
+      delayHours: 72,
+      bodyTemplate: "Hi {{first_name}}, last note from me. Happy to close the loop if now is not the time.",
+      subjectTemplate: null,
     },
   ];
 }

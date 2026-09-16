@@ -5,7 +5,7 @@ import { withCommand } from "@/lib/http/respond";
 
 const schema = z.object({
   name: z.string().min(1),
-  templateKey: z.enum(["linkedin_only", "email_only", "mixed"]).optional(),
+  templateKey: z.enum(["linkedin_only"]).optional(),
 });
 
 export async function GET() {

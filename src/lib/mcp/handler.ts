@@ -10,45 +10,49 @@ import {
   getCampaign,
   getInbox,
   importLeads,
-  ingestSignals,
   listCampaigns,
-  listSignals,
+  listLists,
+  getList,
   pauseCampaign,
-  promptToCampaign,
-  qualifyLeads,
-  researchLeads,
+  removeLeadFromList,
+  replyToLead,
   resumeCampaign,
-  searchPeople,
   startCampaign,
   stopLead,
   suggestLearnings,
+  updateCampaign,
+  updateList,
+  deleteCampaign,
+  deleteList,
+  workspaceAnalytics,
 } from "../app/commands";
-import { SIGNAL_TYPES } from "../signals/catalog";
 
-const importSchema = z.object({
-  list_id: z.string().optional(),
-  list_name: z.string().optional(),
-  content: z.string().min(1),
-  format: z.enum(["csv", "markdown", "auto"]).optional(),
-});
+const importSchema = z
+  .object({
+    list_id: z.string().optional(),
+    list_name: z.string().optional(),
+    content: z.string().optional(),
+    urls: z.array(z.string()).optional(),
+    format: z.enum(["csv", "markdown", "urls", "auto"]).optional(),
+  })
+  .refine((d) => Boolean(d.content?.trim()) || Boolean(d.urls?.some((u) => u.trim())), {
+    message: "urls or content required",
+  });
 
 const createCampaignSchema = z.object({
   name: z.string().min(1),
-  template_key: z.enum(["linkedin_only", "email_only", "mixed"]).optional(),
+  template_key: z.enum(["linkedin_only"]).optional(),
   linkedin_sender_id: z.string().nullable().optional(),
-  email_sender_id: z.string().nullable().optional(),
   steps: z
     .array(
       z.object({
         stepIndex: z.number().int().nonnegative(),
-        channel: z.enum(["linkedin", "email", "gift"]),
-        action: z.enum(["connection", "message", "email", "gift"]),
+        channel: z.enum(["linkedin"]),
+        action: z.enum(["connection", "message"]),
         delayHours: z.number().nonnegative(),
         bodyTemplate: z.string(),
         subjectTemplate: z.string().nullable().optional(),
         imageUrl: z.string().nullable().optional(),
-        giftItem: z.string().nullable().optional(),
-        giftNote: z.string().nullable().optional(),
         enabled: z.boolean().optional(),
         skipOverdueHours: z.number().int().nonnegative().optional(),
       }),
@@ -56,77 +60,92 @@ const createCampaignSchema = z.object({
     .optional(),
 });
 
-const personHitSchema = z.object({
-  firstName: z.string(),
-  lastName: z.string(),
-  fullName: z.string().optional(),
-  company: z.string().optional(),
-  title: z.string().optional(),
-  email: z.string().nullable().optional(),
-  linkedinUrl: z.string().nullable().optional(),
-  publicUrl: z.string().nullable().optional(),
-  openingLine: z.string().optional(),
-});
-
-const searchPeopleSchema = z.object({
-  brief: z.string().min(1),
-  limit: z.number().int().positive().optional(),
-  list_name: z.string().optional(),
-  people: z.array(personHitSchema).optional(),
-});
-
 const listIdSchema = z.object({ list_id: z.string() });
-
-const qualifySchema = z.object({
-  list_id: z.string(),
-  criteria: z.string().min(1),
-});
-
-const promptSchema = z.object({
-  brief: z.string().min(1),
-  limit: z.number().int().positive().optional(),
-  name: z.string().optional(),
-  template_key: z.enum(["linkedin_only", "email_only", "mixed"]).optional(),
-  people: z.array(personHitSchema).optional(),
-});
-
-function toHits(people?: z.infer<typeof personHitSchema>[]) {
-  return people?.map((p) => ({
-    firstName: p.firstName,
-    lastName: p.lastName,
-    fullName: p.fullName ?? `${p.firstName} ${p.lastName}`.trim(),
-    company: p.company ?? "",
-    title: p.title ?? "",
-    email: p.email ?? null,
-    linkedinUrl: p.linkedinUrl ?? null,
-    publicUrl: p.publicUrl ?? null,
-    openingLine: p.openingLine ?? "",
-  }));
-}
+const updateListSchema = z.object({ list_id: z.string(), name: z.string().min(1) });
+const removeLeadSchema = z.object({ list_id: z.string(), lead_id: z.string() });
 
 const addLeadsSchema = z.object({
   campaign_id: z.string(),
   list_id: z.string().optional(),
   content: z.string().optional(),
-  format: z.enum(["csv", "markdown", "auto"]).optional(),
+  urls: z.array(z.string()).optional(),
+  format: z.enum(["csv", "markdown", "urls", "auto"]).optional(),
 });
 
 const idSchema = z.object({ campaign_id: z.string() });
 const stopSchema = z.object({ enrollment_id: z.string() });
+const replySchema = z.object({
+  enrollment_id: z.string(),
+  body: z.string().min(1),
+  channel: z.enum(["linkedin"]).optional(),
+});
+const updateCampaignSchema = z.object({
+  campaign_id: z.string(),
+  name: z.string().optional(),
+  linkedin_sender_id: z.string().nullable().optional(),
+  steps: createCampaignSchema.shape.steps,
+});
 
 export const MCP_TOOLS = [
   {
     name: "import_leads",
-    description: "Import CSV or Markdown people into a list. Dedupe on LinkedIn URL then email.",
+    description:
+      "Add people by LinkedIn profile URL. Prefer urls: string[]. Looks up name, title, company, headline, location, and about from each profile (Unipile). Never searches or sends.",
     inputSchema: {
       type: "object",
       properties: {
-        content: { type: "string" },
+        urls: { type: "array", items: { type: "string" }, description: "LinkedIn profile URLs" },
+        content: { type: "string", description: "Optional paste: one LinkedIn URL per line" },
         list_id: { type: "string" },
         list_name: { type: "string" },
-        format: { type: "string", enum: ["csv", "markdown", "auto"] },
       },
-      required: ["content"],
+    },
+  },
+  {
+    name: "list_lists",
+    description: "List people lists (LinkedIn URL lists) in the workspace. Never sends.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_list",
+    description: "Get one people list and its LinkedIn profile URLs. Never sends.",
+    inputSchema: {
+      type: "object",
+      properties: { list_id: { type: "string" } },
+      required: ["list_id"],
+    },
+  },
+  {
+    name: "update_list",
+    description: "Rename a people list. Never sends.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        list_id: { type: "string" },
+        name: { type: "string" },
+      },
+      required: ["list_id", "name"],
+    },
+  },
+  {
+    name: "remove_lead_from_list",
+    description: "Remove one person from a list. Does not stop them in a sequence. Never sends.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        list_id: { type: "string" },
+        lead_id: { type: "string" },
+      },
+      required: ["list_id", "lead_id"],
+    },
+  },
+  {
+    name: "delete_list",
+    description: "Delete a people list. People already enrolled in a sequence stay there. Never sends.",
+    inputSchema: {
+      type: "object",
+      properties: { list_id: { type: "string" } },
+      required: ["list_id"],
     },
   },
   {
@@ -136,20 +155,43 @@ export const MCP_TOOLS = [
       type: "object",
       properties: {
         name: { type: "string" },
-        template_key: { type: "string", enum: ["linkedin_only", "email_only", "mixed"] },
+        template_key: { type: "string", enum: ["linkedin_only"] },
         steps: { type: "array" },
       },
       required: ["name"],
     },
   },
   {
+    name: "update_campaign",
+    description: "Edit a draft sequence (name or steps). Running sequences cannot be edited. Never sends.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        campaign_id: { type: "string" },
+        name: { type: "string" },
+        steps: { type: "array" },
+      },
+      required: ["campaign_id"],
+    },
+  },
+  {
+    name: "delete_campaign",
+    description: "Delete a draft sequence. Running or paused sequences cannot be deleted — pause instead. Never sends.",
+    inputSchema: {
+      type: "object",
+      properties: { campaign_id: { type: "string" } },
+      required: ["campaign_id"],
+    },
+  },
+  {
     name: "add_leads_to_campaign",
-    description: "Enroll a list or inline rows onto a campaign as pending.",
+    description: "Enroll a list or LinkedIn profile URLs onto a campaign as pending. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
         campaign_id: { type: "string" },
         list_id: { type: "string" },
+        urls: { type: "array", items: { type: "string" } },
         content: { type: "string" },
       },
       required: ["campaign_id"],
@@ -207,62 +249,25 @@ export const MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "reply_inbox",
+    description: "Reply to one person in inbox. Does not start a campaign. Sandbox still dry-runs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enrollment_id: { type: "string" },
+        body: { type: "string" },
+        channel: { type: "string", enum: ["linkedin"] },
+      },
+      required: ["enrollment_id", "body"],
+    },
+  },
+  {
     name: "stop_lead",
     description: "Stop remaining steps for one enrollment.",
     inputSchema: {
       type: "object",
       properties: { enrollment_id: { type: "string" } },
       required: ["enrollment_id"],
-    },
-  },
-  {
-    name: "search_people",
-    description:
-      "Search people from a targeting brief. Uses Apollo People API Search when APOLLO_API_KEY is set; otherwise a stub catalog. Draft people only. Never sends.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        brief: { type: "string" },
-        limit: { type: "number" },
-        list_name: { type: "string" },
-      },
-      required: ["brief"],
-    },
-  },
-  {
-    name: "research_leads",
-    description: "Fill opening_line and public_url for every person on a list. Never sends.",
-    inputSchema: {
-      type: "object",
-      properties: { list_id: { type: "string" } },
-      required: ["list_id"],
-    },
-  },
-  {
-    name: "qualify_leads",
-    description: "Qualify a list against criteria. Stores fit/maybe/no plus explanation per person. Never sends.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        list_id: { type: "string" },
-        criteria: { type: "string" },
-      },
-      required: ["list_id", "criteria"],
-    },
-  },
-  {
-    name: "prompt_to_campaign",
-    description:
-      "Search, research, and save a personalized campaign draft from a brief. Always draft. Never sends.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        brief: { type: "string" },
-        limit: { type: "number" },
-        name: { type: "string" },
-        template_key: { type: "string", enum: ["linkedin_only", "email_only", "mixed"] },
-      },
-      required: ["brief"],
     },
   },
   {
@@ -275,17 +280,9 @@ export const MCP_TOOLS = [
     },
   },
   {
-    name: "list_signals",
-    description: "In-market signals this week (hiring, funding, social, tool switch). Never sends.",
-    inputSchema: {
-      type: "object",
-      properties: { since_days: { type: "number" } },
-    },
-  },
-  {
-    name: "ingest_signals",
-    description: "Ingest provided signals or seed stub catalog demo signals. Never scrapes Sales Nav. Never sends.",
-    inputSchema: { type: "object", properties: { signals: { type: "array" } } },
+    name: "get_analytics",
+    description: "Workspace stats board: sent, skipped, replies, reply rate. Zeros when nothing has sent. Never sends.",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "suggest_learnings",
@@ -319,29 +316,55 @@ export async function callMcpTool(
         listId: input.list_id,
         listName: input.list_name,
         content: input.content,
+        urls: input.urls,
         format: input.format,
       });
     }
+    case "list_lists":
+      return listLists(ctx);
+    case "get_list":
+      return getList(ctx, listIdSchema.parse(args).list_id);
+    case "update_list": {
+      const input = updateListSchema.parse(args);
+      return updateList(ctx, input.list_id, { name: input.name });
+    }
+    case "remove_lead_from_list": {
+      const input = removeLeadSchema.parse(args);
+      return removeLeadFromList(ctx, input.list_id, input.lead_id);
+    }
+    case "delete_list":
+      return deleteList(ctx, listIdSchema.parse(args).list_id);
     case "create_campaign": {
       const input = createCampaignSchema.parse(args);
       return createCampaign(ctx, {
         name: input.name,
         templateKey: input.template_key,
         linkedinSenderId: input.linkedin_sender_id,
-        emailSenderId: input.email_sender_id,
         steps: input.steps?.map((s) => ({
           ...s,
           subjectTemplate: s.subjectTemplate ?? null,
-          giftItem: s.giftItem ?? null,
-          giftNote: s.giftNote ?? null,
         })),
       });
     }
+    case "update_campaign": {
+      const input = updateCampaignSchema.parse(args);
+      return updateCampaign(ctx, input.campaign_id, {
+        name: input.name,
+        linkedinSenderId: input.linkedin_sender_id,
+        steps: input.steps?.map((s) => ({
+          ...s,
+          subjectTemplate: s.subjectTemplate ?? null,
+        })),
+      });
+    }
+    case "delete_campaign":
+      return deleteCampaign(ctx, idSchema.parse(args).campaign_id);
     case "add_leads_to_campaign": {
       const input = addLeadsSchema.parse(args);
       return addLeadsToCampaign(ctx, input.campaign_id, {
         listId: input.list_id,
         content: input.content,
+        urls: input.urls,
         format: input.format,
       });
     }
@@ -359,60 +382,20 @@ export async function callMcpTool(
       return connectStatus(ctx);
     case "get_inbox":
       return getInbox(ctx);
+    case "reply_inbox": {
+      const input = replySchema.parse(args);
+      return replyToLead(ctx, {
+        enrollmentId: input.enrollment_id,
+        body: input.body,
+        channel: input.channel,
+      });
+    }
     case "stop_lead":
       return stopLead(ctx, stopSchema.parse(args).enrollment_id);
-    case "search_people": {
-      const input = searchPeopleSchema.parse(args);
-      return searchPeople(ctx, {
-        brief: input.brief,
-        limit: input.limit,
-        listName: input.list_name,
-        people: toHits(input.people),
-      });
-    }
-    case "research_leads":
-      return researchLeads(ctx, listIdSchema.parse(args).list_id);
-    case "qualify_leads": {
-      const input = qualifySchema.parse(args);
-      return qualifyLeads(ctx, input.list_id, input.criteria);
-    }
-    case "prompt_to_campaign": {
-      const input = promptSchema.parse(args);
-      return promptToCampaign(ctx, {
-        brief: input.brief,
-        limit: input.limit,
-        name: input.name,
-        templateKey: input.template_key,
-        people: toHits(input.people),
-      });
-    }
     case "export_leads":
       return exportLeadsToCrm(ctx, listIdSchema.parse(args).list_id);
-    case "list_signals": {
-      const input = z.object({ since_days: z.number().int().positive().optional() }).parse(args ?? {});
-      return listSignals(ctx, { sinceDays: input.since_days });
-    }
-    case "ingest_signals": {
-      const input = z
-        .object({
-          signals: z
-            .array(
-              z.object({
-                type: z.enum(SIGNAL_TYPES),
-                title: z.string(),
-                detail: z.string().optional(),
-                company: z.string().optional(),
-                personName: z.string().optional(),
-                source: z.string().optional(),
-                occurredAt: z.string().optional(),
-                leadId: z.string().optional(),
-              }),
-            )
-            .optional(),
-        })
-        .parse(args ?? {});
-      return ingestSignals(ctx, input);
-    }
+    case "get_analytics":
+      return workspaceAnalytics(ctx);
     case "suggest_learnings":
       return suggestLearnings(ctx, idSchema.parse(args).campaign_id);
     case "apply_learnings":

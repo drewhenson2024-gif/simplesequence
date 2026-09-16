@@ -10,8 +10,7 @@ type Campaign = { id: string; name: string; status: string; enrollmentCount: num
 export default function CampaignsPage() {
   const [rows, setRows] = useState<Campaign[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [name, setName] = useState("Mixed sequence");
-  const [templateKey, setTemplateKey] = useState("mixed");
+  const [name, setName] = useState("LinkedIn sequence");
 
   async function refresh() {
     const res = await fetch("/api/campaigns");
@@ -27,7 +26,7 @@ export default function CampaignsPage() {
     const res = await fetch("/api/campaigns", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name, templateKey }),
+      body: JSON.stringify({ name, templateKey: "linkedin_only" }),
     });
     const data = await res.json();
     window.location.href = `/campaigns/${data.id}`;
@@ -37,10 +36,10 @@ export default function CampaignsPage() {
     <AppShell>
       <h1 className="text-3xl">Sequences</h1>
       <p className="mt-2 max-w-2xl text-(--muted)">
-        A sequence is the messages you send: LinkedIn connection, then a message, then email. Create
-        a draft, add people from a list, then hit Start.
+        Create a draft, add LinkedIn profile URLs, then Start. Sequences are LinkedIn connection
+        plus messages. Stats live on Analytics. Learnings write a new draft only.
       </p>
-      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-lg border border-(--line) bg-(--panel) p-4">
+      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-(--line) bg-(--panel) p-4">
         <div>
           <label className="text-sm text-(--muted)">Name</label>
           <input
@@ -49,35 +48,23 @@ export default function CampaignsPage() {
             onChange={(e) => setName(e.target.value)}
           />
         </div>
-        <div>
-          <label className="text-sm text-(--muted)">Template</label>
-          <select
-            className="mt-1 block rounded border border-(--line) bg-(--input) px-3 py-2"
-            value={templateKey}
-            onChange={(e) => setTemplateKey(e.target.value)}
-          >
-            <option value="mixed">Mixed LinkedIn + email</option>
-            <option value="linkedin_only">LinkedIn only</option>
-            <option value="email_only">Email only</option>
-          </select>
-        </div>
-        <button type="button" onClick={() => void create()} className="rounded-md bg-(--ink) px-4 py-2 text-(--panel)">
+        <button type="button" onClick={() => void create()} className="btn-primary rounded-full px-4 py-2">
           Create draft
         </button>
       </div>
       <ul className="mt-6 space-y-2">
         {!loaded ? (
-          <li className="rounded border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
+          <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
             Loading…
           </li>
         ) : null}
         {loaded && rows.length === 0 ? (
-          <li className="rounded border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
+          <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
             No sequences yet. Create a draft above.
           </li>
         ) : null}
         {rows.map((c) => (
-          <li key={c.id} className="flex items-center justify-between rounded border border-(--line) bg-(--panel) px-4 py-3">
+          <li key={c.id} className="flex items-center justify-between rounded-2xl border border-(--line) bg-(--panel) px-4 py-3">
             <Link href={`/campaigns/${c.id}`} className="font-medium">
               {c.name}
             </Link>

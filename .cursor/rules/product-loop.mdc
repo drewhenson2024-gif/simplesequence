@@ -1,0 +1,34 @@
+---
+description: SimpleSequence is the send loop; finished-product chrome is in-scope; Coming soon is how blocked features wait
+alwaysApply: true
+---
+
+# Product loop
+
+The product is a hosted LinkedIn sequencer. Agents draft. Humans Start. Unipile is the only send pipe. Live site only: https://simplesequence-three.vercel.app
+
+The **site chrome is the finished product**. Import LinkedIn URLs → sequence → LinkedIn send → inbox → **Analytics**. If a vendor is missing, leave the screen and label Coming soon. Do not delete the feature. Do not fake live data. Do not skip a page that belongs in the finished design. Build time and file count are not a reason to recommend or reject an approach.
+
+## Marketing vs app
+
+The homepage is for customers. Feature cards show an in-page example — they must not navigate into the app. **Open app** is the only entry into People / Sequences / Inbox / Analytics / Settings.
+
+## Core (this is the live work)
+
+People paste or MCP `urls` of LinkedIn profile URLs → import looks up name, title, company, headline, location, and about → sequence draft (connection + LinkedIn messages) → explicit Start → send (sandbox, working hours, one in-flight, LinkedIn invite daily cap, stop on reply) → Outbox → Inbox → Stop lead.
+
+Hobby cron is once/day — that still paces live send.
+
+We do not search for people. We do not run an in-market Signals watcher. We do not send email.
+
+## Coming soon until a gate is green
+
+- Analytics page is live (`/analytics`). Do not fake rates. AI copy from stats is Coming soon until a model is wired. Breakout: `plans/self-improving-sequences.md`.
+
+MCP may draft and may run the rest of the loop (`start_campaign`, inbox reply, analytics, list/campaign rename and delete). MCP may never auto-send as a side effect of import. `apply_learnings` writes a new draft only. `delete_campaign` is draft-only. Connecting LinkedIn is Settings in the browser.
+
+Never show “stub” on the site.
+
+## Parked breakouts
+
+- `plans/self-improving-sequences.md` — Analytics chrome is the board. AI copy (C) and A/B (B) still parked. Do not fake rates. Never auto-rewrite a running sequence.

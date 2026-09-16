@@ -7,16 +7,28 @@ const NAV = [
   { href: "/lists", label: "People" },
   { href: "/campaigns", label: "Sequences" },
   { href: "/inbox", label: "Inbox" },
+  { href: "/analytics", label: "Analytics" },
   { href: "/settings", label: "Settings" },
 ];
+
+export function BackLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} className="text-sm text-(--muted) hover:text-(--ink)">
+      ← {label}
+    </Link>
+  );
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   return (
     <div className="min-h-screen">
-      <header className="border-b border-(--line) bg-(--panel)">
+      <header className="border-b border-(--line) bg-(--paper)">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <Link href="/" className="text-xl font-semibold">
+          <Link href="/" className="flex items-center gap-2 text-sm font-medium">
+            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-(--ochre) text-xs text-white">
+              S
+            </span>
             SimpleSequence
           </Link>
           <nav className="flex flex-wrap gap-5 text-sm">
@@ -26,7 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={active ? "text-(--ink)" : "text-(--muted) hover:text-(--ink)"}
+                  className={active ? "text-(--ochre)" : "text-(--muted) hover:text-(--ink)"}
                 >
                   {item.label}
                 </Link>

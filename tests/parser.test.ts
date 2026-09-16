@@ -57,6 +57,21 @@ describe("lead parser", () => {
     );
   });
 
+  it("parses one LinkedIn URL per line without a CSV header", () => {
+    const parsed = parseLeads(
+      "https://www.linkedin.com/in/priya-rao\nhttps://linkedin.com/in/matt-cole/?trk=x\n",
+    );
+    expect(detectFormat("https://www.linkedin.com/in/priya-rao\nhttps://www.linkedin.com/in/matt-cole")).toBe(
+      "urls",
+    );
+    expect(parsed.imported).toBe(2);
+    expect(parsed.rows.map((r) => r.linkedinUrlNormalized)).toEqual([
+      "https://www.linkedin.com/in/priya-rao",
+      "https://www.linkedin.com/in/matt-cole",
+    ]);
+    expect(parsed.rows[0]?.fullName).toBe("Priya Rao");
+  });
+
   it("parses markdown bullets with profile URLs", () => {
     const parsed = parseLeads(
       "- Jane Doe https://linkedin.com/in/jane-doe\n- https://www.linkedin.com/in/john-roe John Roe",

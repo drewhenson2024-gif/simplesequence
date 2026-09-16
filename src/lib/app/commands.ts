@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import type { Client } from "@libsql/client";
 import type { Db } from "../db/client";
 import * as tables from "../db/schema";
@@ -28,6 +28,7 @@ import {
   type SenderStatus,
 } from "../domain/fsm";
 import { addJitter, inWorkingHours, nextWorkingSlot, type WorkingHours } from "../domain/jitter";
+import { calendarDay, LINKEDIN_INVITE_DAILY_CAP } from "../domain/linkedinSafety";
 import {
   renderTemplate,
   stepsForTemplate,
@@ -36,13 +37,8 @@ import {
   type TemplateKey,
 } from "../domain/templates";
 import { contentHash, parseLeads, type LeadDraft } from "../ingest/parser";
+import { applyProfileToDraft } from "../domain/profile";
 import { channelFromUnipileAccount, keysPresent, type UnipilePort } from "../unipile/port";
-import { type DataPort, type LeadSearchHit, hitToResearchInput } from "../data/port";
-import { StubData } from "../data/stub";
-import { qualifyLead } from "../data/qualify";
-import { WaterfallData } from "../data/waterfall";
-import { MockGift, type GiftPort } from "../gift/port";
-import { demoSignalsFromCatalog, SIGNAL_TYPES, type SignalType } from "../signals/catalog";
 
 export type Clock = { now: () => Date };
 
@@ -50,8 +46,6 @@ export type AppContext = {
   db: Db;
   client: Client;
   unipile: UnipilePort;
-  data?: DataPort;
-  gift?: GiftPort;
   clock: Clock;
   actor: string;
   workspaceId: WorkspaceId;
@@ -69,6 +63,23 @@ export class CommandError extends Error {
 
 function iso(d: Date): string {
   return d.toISOString();
+}
+
+function isGiftStep(step: { channel?: string | null; action?: string | null }) {
+  return step.channel === "gift" || step.action === "gift";
+}
+
+function isEmailStep(step: { channel?: string | null; action?: string | null }) {
+  return step.channel === "email" || step.action === "email";
+}
+
+function isRemovedStep(step: { channel?: string | null; action?: string | null }) {
+  return isGiftStep(step) || isEmailStep(step);
+}
+
+function rejectRemovedSteps(steps: Array<{ channel?: string | null; action?: string | null }> | undefined) {
+  if (steps?.some(isGiftStep)) throw new CommandError("gift steps are not supported", 400);
+  if (steps?.some(isEmailStep)) throw new CommandError("email steps are not supported", 400);
 }
 
 async function getWorkspace(ctx: AppContext) {
@@ -119,15 +130,18 @@ function mergeDraft(existing: typeof tables.leads.$inferSelect, incoming: LeadDr
     ...incoming.custom,
   };
   return {
-    firstName: existing.firstName || incoming.firstName,
-    lastName: existing.lastName || incoming.lastName,
-    fullName: existing.fullName || incoming.fullName,
-    company: existing.company || incoming.company,
-    title: existing.title || incoming.title,
+    firstName: incoming.firstName.trim() || existing.firstName,
+    lastName: incoming.lastName.trim() || existing.lastName,
+    fullName: incoming.fullName.trim() || existing.fullName,
+    company: incoming.company.trim() || existing.company,
+    title: incoming.title.trim() || existing.title,
+    headline: incoming.headline.trim() || existing.headline,
+    location: incoming.location.trim() || existing.location,
+    about: incoming.about.trim() || existing.about,
     email: existing.email || incoming.email,
     linkedinUrl: existing.linkedinUrl || incoming.linkedinUrl,
     linkedinUrlNormalized: existing.linkedinUrlNormalized || incoming.linkedinUrlNormalized,
-    openingLine: existing.openingLine || incoming.openingLine,
+    openingLine: incoming.openingLine.trim() || existing.openingLine,
     publicUrl: existing.publicUrl || incoming.publicUrl,
     customJson: JSON.stringify(custom),
   };
@@ -145,13 +159,16 @@ export async function importLeads(
   input: {
     listId?: string;
     listName?: string;
-    content: string;
-    format?: "csv" | "markdown" | "auto";
+    content?: string;
+    urls?: string[];
+    format?: "csv" | "markdown" | "urls" | "auto";
   },
 ): Promise<{ listId: ListId; name: string; counts: ImportCounts }> {
   const now = iso(ctx.clock.now());
-  const parsed = parseLeads(input.content, input.format ?? "auto");
-  const hash = contentHash(`${input.listId ?? ""}:${input.content}`);
+  const content = materializeLeadInput(input);
+  if (!content) throw new CommandError("paste LinkedIn profile URLs", 400);
+  const parsed = parseLeads(content, input.format ?? "auto");
+  const hash = contentHash(`profile:3:${input.listId ?? ""}:${content}`);
   const cached = await ctx.db
     .select()
     .from(tables.idempotencyKeys)
@@ -162,7 +179,7 @@ export async function importLeads(
   }
 
   let listId = input.listId ? asListId(input.listId) : (newId("lst") as ListId);
-  let listName = input.listName ?? "Imported list";
+  let listName = input.listName?.trim() || "Imported list";
   const existingList = input.listId
     ? await ctx.db.select().from(tables.lists).where(eq(tables.lists.id, input.listId)).limit(1)
     : [];
@@ -170,14 +187,14 @@ export async function importLeads(
   if (existingList[0]) {
     listId = asListId(existingList[0].id);
     listName = existingList[0].name;
-    const raw = existingList[0].rawImport ? `${existingList[0].rawImport}\n\n${input.content}` : input.content;
+    const raw = existingList[0].rawImport ? `${existingList[0].rawImport}\n\n${content}` : content;
     await ctx.db.update(tables.lists).set({ rawImport: raw }).where(eq(tables.lists.id, listId));
   } else {
     await ctx.db.insert(tables.lists).values({
       id: listId,
       workspaceId: ctx.workspaceId,
       name: listName,
-      rawImport: input.content,
+      rawImport: content,
       createdAt: now,
     });
   }
@@ -193,12 +210,14 @@ export async function importLeads(
       : await ctx.db.select().from(tables.leads).where(inArray(tables.leads.id, memberIds));
 
   const counts: ImportCounts = { imported: 0, merged: 0, skipped: 0, invalid: 0 };
+  const accountId = await linkedinAccountId(ctx);
 
-  for (const row of parsed.rows) {
-    if (!row.valid) {
+  for (const rawRow of parsed.rows) {
+    if (!rawRow.valid) {
       counts.invalid += 1;
       continue;
     }
+    const row = await enrichDraft(ctx, rawRow, accountId);
     const match = members.find((m) => {
       if (row.linkedinUrlNormalized && m.linkedinUrlNormalized === row.linkedinUrlNormalized) return true;
       if (row.email && m.email && m.email === row.email) return true;
@@ -220,6 +239,9 @@ export async function importLeads(
       fullName: row.fullName,
       company: row.company,
       title: row.title,
+      headline: row.headline,
+      location: row.location,
+      about: row.about,
       email: row.email,
       linkedinUrl: row.linkedinUrl,
       linkedinUrlNormalized: row.linkedinUrlNormalized,
@@ -246,6 +268,26 @@ export async function importLeads(
   return result;
 }
 
+async function linkedinAccountId(ctx: AppContext): Promise<string | undefined> {
+  const rows = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(and(eq(tables.senderAccounts.workspaceId, ctx.workspaceId), eq(tables.senderAccounts.channel, "linkedin")));
+  const live = rows.find((s) => s.unipileAccountId && !s.unipileAccountId.startsWith("mock_"));
+  return live?.unipileAccountId ?? rows[0]?.unipileAccountId ?? undefined;
+}
+
+async function enrichDraft(ctx: AppContext, row: LeadDraft, accountId?: string): Promise<LeadDraft> {
+  const url = row.linkedinUrlNormalized ?? row.linkedinUrl;
+  if (!url || !ctx.unipile.lookupProfile) return row;
+  try {
+    const profile = await ctx.unipile.lookupProfile({ profileUrl: url, accountId });
+    return applyProfileToDraft(row, profile);
+  } catch {
+    return row;
+  }
+}
+
 export async function listLists(ctx: AppContext) {
   const rows = await ctx.db.select().from(tables.lists).where(eq(tables.lists.workspaceId, ctx.workspaceId));
   const out = [];
@@ -259,18 +301,79 @@ export async function listLists(ctx: AppContext) {
   return out;
 }
 
-export async function getList(ctx: AppContext, listId: string) {
-  const rows = await ctx.db.select().from(tables.lists).where(eq(tables.lists.id, listId)).limit(1);
-  const list = rows[0];
+async function requireList(ctx: AppContext, listId: string) {
+  const [list] = await ctx.db
+    .select()
+    .from(tables.lists)
+    .where(and(eq(tables.lists.id, listId), eq(tables.lists.workspaceId, ctx.workspaceId)))
+    .limit(1);
   if (!list) throw new CommandError("list not found", 404);
+  return list;
+}
+
+async function listWithLeads(ctx: AppContext, list: typeof tables.lists.$inferSelect) {
   const membership = await ctx.db
     .select()
     .from(tables.listLeads)
-    .where(eq(tables.listLeads.listId, listId));
+    .where(eq(tables.listLeads.listId, list.id));
   const ids = membership.map((m) => m.leadId);
   const leadRows =
     ids.length === 0 ? [] : await ctx.db.select().from(tables.leads).where(inArray(tables.leads.id, ids));
   return { ...list, leads: leadRows };
+}
+
+export async function getList(ctx: AppContext, listId: string) {
+  return listWithLeads(ctx, await requireList(ctx, listId));
+}
+
+export async function updateList(ctx: AppContext, listId: string, input: { name: string }) {
+  const list = await requireList(ctx, listId);
+  const name = input.name.trim();
+  if (!name) throw new CommandError("name required", 400);
+  await ctx.db.update(tables.lists).set({ name }).where(eq(tables.lists.id, listId));
+  await audit(ctx, "update_list", { listId, name });
+  return listWithLeads(ctx, { ...list, name });
+}
+
+export async function removeLeadFromList(ctx: AppContext, listId: string, leadId: string) {
+  const list = await requireList(ctx, listId);
+  await ctx.db
+    .delete(tables.listLeads)
+    .where(and(eq(tables.listLeads.listId, listId), eq(tables.listLeads.leadId, leadId)));
+  await audit(ctx, "remove_lead_from_list", { listId, leadId });
+  return listWithLeads(ctx, list);
+}
+
+export async function deleteList(ctx: AppContext, listId: string) {
+  await requireList(ctx, listId);
+  await ctx.db.delete(tables.listLeads).where(eq(tables.listLeads.listId, listId));
+  await ctx.db.delete(tables.lists).where(eq(tables.lists.id, listId));
+  await audit(ctx, "delete_list", { listId });
+  return { ok: true as const, listId };
+}
+
+export async function deleteCampaign(ctx: AppContext, campaignId: string) {
+  const [campaign] = await ctx.db
+    .select()
+    .from(tables.campaigns)
+    .where(and(eq(tables.campaigns.id, campaignId), eq(tables.campaigns.workspaceId, ctx.workspaceId)))
+    .limit(1);
+  if (!campaign) throw new CommandError("campaign not found", 404);
+  if (campaign.status !== "draft") throw new CommandError("only drafts can be deleted", 409);
+  const enrollments = await ctx.db
+    .select()
+    .from(tables.enrollments)
+    .where(eq(tables.enrollments.campaignId, campaignId));
+  const enrollmentIds = enrollments.map((row) => row.id);
+  if (enrollmentIds.length > 0) {
+    await ctx.db.delete(tables.messages).where(inArray(tables.messages.enrollmentId, enrollmentIds));
+  }
+  await ctx.db.delete(tables.sendJobs).where(eq(tables.sendJobs.campaignId, campaignId));
+  await ctx.db.delete(tables.enrollments).where(eq(tables.enrollments.campaignId, campaignId));
+  await ctx.db.delete(tables.sequenceSteps).where(eq(tables.sequenceSteps.campaignId, campaignId));
+  await ctx.db.delete(tables.campaigns).where(eq(tables.campaigns.id, campaignId));
+  await audit(ctx, "delete_campaign", { campaignId });
+  return { ok: true as const, campaignId };
 }
 
 export async function createCampaign(
@@ -280,23 +383,21 @@ export async function createCampaign(
     templateKey?: TemplateKey;
     steps?: SequenceStepDraft[];
     linkedinSenderId?: string | null;
-    emailSenderId?: string | null;
   },
 ): Promise<{ id: CampaignId; status: "draft" }> {
   const now = iso(ctx.clock.now());
   const id = newId("cmp") as CampaignId;
   const steps = input.steps?.length
     ? input.steps
-    : stepsForTemplate(input.templateKey ?? "mixed");
+    : stepsForTemplate(input.templateKey ?? "linkedin_only");
+  rejectRemovedSteps(steps);
   await ctx.db.insert(tables.campaigns).values({
     id,
     workspaceId: ctx.workspaceId,
     name: input.name,
     status: "draft",
-    templateKey: input.templateKey ?? "mixed",
+    templateKey: input.templateKey ?? "linkedin_only",
     linkedinSenderId: input.linkedinSenderId ?? null,
-    emailSenderId: input.emailSenderId ?? null,
-    giftSenderId: null,
     createdAt: now,
   });
   for (const step of steps) {
@@ -312,8 +413,6 @@ export async function createCampaign(
       enabled: step.enabled === false ? 0 : 1,
       skipOverdueHours: step.skipOverdueHours ?? 72,
       imageUrl: step.imageUrl ?? null,
-      giftItem: step.giftItem ?? null,
-      giftNote: step.giftNote ?? null,
     });
   }
   await audit(ctx, "create_campaign", { campaignId: id, name: input.name, status: "draft" });
@@ -327,7 +426,6 @@ export async function updateCampaign(
     name?: string;
     steps?: SequenceStepDraft[];
     linkedinSenderId?: string | null;
-    emailSenderId?: string | null;
   },
 ) {
   const [campaign] = await ctx.db
@@ -337,12 +435,12 @@ export async function updateCampaign(
     .limit(1);
   if (!campaign) throw new CommandError("campaign not found", 404);
   if (campaign.status !== "draft") throw new CommandError("only drafts can be edited", 409);
+  rejectRemovedSteps(input.steps);
   await ctx.db
     .update(tables.campaigns)
     .set({
       name: input.name ?? campaign.name,
       linkedinSenderId: input.linkedinSenderId === undefined ? campaign.linkedinSenderId : input.linkedinSenderId,
-      emailSenderId: input.emailSenderId === undefined ? campaign.emailSenderId : input.emailSenderId,
     })
     .where(eq(tables.campaigns.id, campaignId));
   if (input.steps) {
@@ -360,8 +458,6 @@ export async function updateCampaign(
         enabled: step.enabled === false ? 0 : 1,
         skipOverdueHours: step.skipOverdueHours ?? 72,
         imageUrl: step.imageUrl ?? null,
-        giftItem: step.giftItem ?? null,
-        giftNote: step.giftNote ?? null,
       });
     }
   }
@@ -369,10 +465,15 @@ export async function updateCampaign(
   return getCampaign(ctx, campaignId);
 }
 
+function materializeLeadInput(input: { content?: string; urls?: string[] }): string {
+  const fromUrls = (input.urls ?? []).map((u) => u.trim()).filter(Boolean).join("\n");
+  return [input.content?.trim() ?? "", fromUrls].filter(Boolean).join("\n");
+}
+
 export async function addLeadsToCampaign(
   ctx: AppContext,
   campaignId: string,
-  input: { listId?: string; content?: string; format?: "csv" | "markdown" | "auto" },
+  input: { listId?: string; content?: string; urls?: string[]; format?: "csv" | "markdown" | "urls" | "auto" },
 ) {
   const [campaign] = await ctx.db
     .select()
@@ -381,16 +482,17 @@ export async function addLeadsToCampaign(
     .limit(1);
   if (!campaign) throw new CommandError("campaign not found", 404);
   let listId = input.listId;
-  if (input.content) {
+  const blob = materializeLeadInput(input);
+  if (blob) {
     const imported = await importLeads(ctx, {
       listId: input.listId,
       listName: `Campaign ${campaign.name} leads`,
-      content: input.content,
+      content: blob,
       format: input.format,
     });
     listId = imported.listId;
   }
-  if (!listId) throw new CommandError("listId or content required");
+  if (!listId) throw new CommandError("list_id or urls required", 400);
   const list = await getList(ctx, listId);
   const now = iso(ctx.clock.now());
   let enrolled = 0;
@@ -423,9 +525,13 @@ function leadFields(lead: typeof tables.leads.$inferSelect): LeadFields {
     fullName: lead.fullName,
     company: lead.company,
     title: lead.title,
+    headline: lead.headline,
+    location: lead.location,
+    about: lead.about,
     openingLine: lead.openingLine,
     email: lead.email,
     linkedinUrl: lead.linkedinUrlNormalized ?? lead.linkedinUrl,
+    profileUrl: lead.publicUrl || lead.linkedinUrlNormalized || lead.linkedinUrl,
   };
 }
 
@@ -438,32 +544,12 @@ function leadCustom(lead: typeof tables.leads.$inferSelect | null): Record<strin
   }
 }
 
-function giftAddressOf(lead: typeof tables.leads.$inferSelect | null): string {
-  const custom = leadCustom(lead);
-  const fromCustom = [
-    custom.office_address,
-    custom.custom_office_address,
-    custom.company_address,
-    custom.custom_company_address,
-    custom.address,
-  ]
-    .map((v) => (typeof v === "string" ? v.trim() : ""))
-    .find(Boolean);
-  return fromCustom || lead?.company?.trim() || "";
-}
-
 function missingChannelReason(
   step: { channel: string; action: string },
   lead: typeof tables.leads.$inferSelect | null,
 ): string | null {
   if (!lead) return "missing lead";
-  if (step.action === "gift" || step.channel === "gift") {
-    if (!giftAddressOf(lead)) return "no gift address";
-    return null;
-  }
-  if (step.action === "email" || step.channel === "email") {
-    if (!lead.email) return "no email";
-  }
+  if (isEmailStep(step)) return "email removed";
   if (step.action === "connection" || step.action === "message" || step.channel === "linkedin") {
     if (!(lead.linkedinUrlNormalized ?? lead.linkedinUrl)) return "no linkedin url";
   }
@@ -547,7 +633,199 @@ export async function listCampaigns(ctx: AppContext) {
   return out;
 }
 
-async function ensureSandboxSender(ctx: AppContext, channel: "linkedin" | "email" | "gift"): Promise<SenderId> {
+export type AnalyticsStep = {
+  stepIndex: number;
+  action: string;
+  channel: string;
+  sent: number;
+  skipped: number;
+  failed: number;
+  replies: number;
+  replyRate: number;
+  skipReasons: Record<string, number>;
+};
+
+export type AnalyticsRun = {
+  id: string;
+  name: string;
+  status: string;
+  enrolled: number;
+  sent: number;
+  skipped: number;
+  failed: number;
+  pending: number;
+  replies: number;
+  replyRate: number;
+  restricted: boolean;
+  lastActivity: string | null;
+  steps: AnalyticsStep[];
+  insights: string[];
+};
+
+export type WorkspaceAnalytics = {
+  totals: {
+    runs: number;
+    enrolled: number;
+    sent: number;
+    skipped: number;
+    failed: number;
+    replies: number;
+    replyRate: number;
+    restricted: number;
+  };
+  runs: AnalyticsRun[];
+};
+
+function insightsForRun(run: Omit<AnalyticsRun, "insights">): string[] {
+  if (run.sent === 0 && run.skipped === 0 && run.failed === 0) {
+    return ["No send activity on this run yet. Start the sequence to fill the board."];
+  }
+  const lines: string[] = [];
+  if (run.sent > 0) {
+    lines.push(
+      `${run.sent} sent. Reply rate ${Math.round(run.replyRate * 100)}% (${run.replies}/${run.sent}).`,
+    );
+  }
+  const tally: Record<string, number> = {};
+  for (const step of run.steps) {
+    for (const [reason, n] of Object.entries(step.skipReasons)) {
+      tally[reason] = (tally[reason] ?? 0) + n;
+    }
+  }
+  const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
+  if (run.skipped > 0 && top) {
+    lines.push(`${run.skipped} skipped. Top reason: ${top[0]}.`);
+  }
+  if (run.failed > 0) lines.push(`${run.failed} failed.`);
+  const scored = run.steps.filter((s) => s.sent > 0);
+  scored.sort((a, b) => b.replyRate - a.replyRate || b.replies - a.replies);
+  if (scored[0] && scored[0].replies > 0) {
+    lines.push(`Step ${scored[0].stepIndex + 1} (${scored[0].action}) is the strongest so far.`);
+  } else if (run.sent > 0 && run.replies === 0) {
+    lines.push("Sends went out but no replies yet.");
+  }
+  if (run.restricted) {
+    lines.push("This run is restricted. New sends will not go out until the sender is healthy.");
+  }
+  return lines;
+}
+
+export async function workspaceAnalytics(ctx: AppContext): Promise<WorkspaceAnalytics> {
+  const campaigns = await ctx.db
+    .select()
+    .from(tables.campaigns)
+    .where(eq(tables.campaigns.workspaceId, ctx.workspaceId));
+  const ids = campaigns.map((c) => c.id);
+  const enrollments =
+    ids.length === 0
+      ? []
+      : await ctx.db.select().from(tables.enrollments).where(inArray(tables.enrollments.campaignId, ids));
+  const jobs =
+    ids.length === 0
+      ? []
+      : await ctx.db.select().from(tables.sendJobs).where(inArray(tables.sendJobs.campaignId, ids));
+  const steps =
+    ids.length === 0
+      ? []
+      : await ctx.db.select().from(tables.sequenceSteps).where(inArray(tables.sequenceSteps.campaignId, ids));
+
+  const enrollByCampaign = new Map<string, typeof enrollments>();
+  for (const row of enrollments) {
+    const list = enrollByCampaign.get(row.campaignId) ?? [];
+    list.push(row);
+    enrollByCampaign.set(row.campaignId, list);
+  }
+  const jobsByCampaign = new Map<string, typeof jobs>();
+  for (const row of jobs) {
+    const list = jobsByCampaign.get(row.campaignId) ?? [];
+    list.push(row);
+    jobsByCampaign.set(row.campaignId, list);
+  }
+  const stepsByCampaign = new Map<string, typeof steps>();
+  for (const row of steps) {
+    const list = stepsByCampaign.get(row.campaignId) ?? [];
+    list.push(row);
+    stepsByCampaign.set(row.campaignId, list);
+  }
+
+  const runs: AnalyticsRun[] = campaigns.map((campaign) => {
+    const campEnroll = enrollByCampaign.get(campaign.id) ?? [];
+    const campJobs = jobsByCampaign.get(campaign.id) ?? [];
+    const campSteps = [...(stepsByCampaign.get(campaign.id) ?? [])].sort((a, b) => a.stepIndex - b.stepIndex);
+    const enrollById = new Map(campEnroll.map((e) => [e.id, e]));
+    const sent = campJobs.filter((j) => j.status === "sent").length;
+    const skipped = campJobs.filter((j) => j.status === "skipped").length;
+    const failed = campJobs.filter((j) => j.status === "failed").length;
+    const pending = campJobs.filter(
+      (j) => j.status === "pending" || j.status === "claimed" || j.status === "in_progress",
+    ).length;
+    const replies = campEnroll.filter((e) => e.status === "replied").length;
+    const stepRows: AnalyticsStep[] = campSteps.map((step) => {
+      const stepJobs = campJobs.filter((j) => j.stepIndex === step.stepIndex);
+      const stepSent = stepJobs.filter((j) => j.status === "sent");
+      const stepSkipped = stepJobs.filter((j) => j.status === "skipped");
+      const skipReasons: Record<string, number> = {};
+      for (const job of stepSkipped) {
+        const reason = job.error || "skipped";
+        skipReasons[reason] = (skipReasons[reason] ?? 0) + 1;
+      }
+      const stepReplies = stepSent.filter((j) => enrollById.get(j.enrollmentId)?.status === "replied").length;
+      const sentCount = stepSent.length;
+      return {
+        stepIndex: step.stepIndex,
+        action: step.action,
+        channel: step.channel,
+        sent: sentCount,
+        skipped: stepSkipped.length,
+        failed: stepJobs.filter((j) => j.status === "failed").length,
+        replies: stepReplies,
+        replyRate: sentCount === 0 ? 0 : stepReplies / sentCount,
+        skipReasons,
+      };
+    });
+    const last = campJobs.reduce<string | null>((acc, job) => {
+      const ts = job.claimedAt ?? job.createdAt;
+      if (!ts) return acc;
+      if (!acc || ts > acc) return ts;
+      return acc;
+    }, campaign.createdAt);
+    const base = {
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      enrolled: campEnroll.length,
+      sent,
+      skipped,
+      failed,
+      pending,
+      replies,
+      replyRate: sent === 0 ? 0 : replies / sent,
+      restricted: campaign.status === "restricted",
+      lastActivity: last,
+      steps: stepRows,
+    };
+    return { ...base, insights: insightsForRun(base) };
+  });
+  runs.sort((a, b) => (b.lastActivity ?? "").localeCompare(a.lastActivity ?? ""));
+
+  const sent = runs.reduce((n, r) => n + r.sent, 0);
+  const replies = runs.reduce((n, r) => n + r.replies, 0);
+  return {
+    totals: {
+      runs: runs.length,
+      enrolled: runs.reduce((n, r) => n + r.enrolled, 0),
+      sent,
+      skipped: runs.reduce((n, r) => n + r.skipped, 0),
+      failed: runs.reduce((n, r) => n + r.failed, 0),
+      replies,
+      replyRate: sent === 0 ? 0 : replies / sent,
+      restricted: runs.filter((r) => r.restricted).length,
+    },
+    runs,
+  };
+}
+
+async function ensureSandboxSender(ctx: AppContext, channel: "linkedin"): Promise<SenderId> {
   const existing = await ctx.db
     .select()
     .from(tables.senderAccounts)
@@ -561,8 +839,7 @@ async function ensureSandboxSender(ctx: AppContext, channel: "linkedin" | "email
     channel,
     status: "healthy",
     unipileAccountId: `mock_${channel}`,
-    displayName:
-      channel === "linkedin" ? "Sandbox LinkedIn" : channel === "gift" ? "Sandbox gifts" : "Sandbox mailbox",
+    displayName: "Sandbox LinkedIn",
     timezone: "America/Los_Angeles",
     lastError: null,
     createdAt: iso(ctx.clock.now()),
@@ -575,30 +852,18 @@ export async function startCampaign(ctx: AppContext, campaignId: string) {
   const next = campaign.status === "paused" ? "running" : transitionCampaign(campaign.status as CampaignStatus, "running");
   const ws = await getWorkspace(ctx);
   if (ws.killSwitch) throw new CommandError("kill switch is on", 409);
-  const needsLi = campaign.steps.some((s) => s.channel === "linkedin");
-  const needsEmail = campaign.steps.some((s) => s.channel === "email");
-  const needsGift = campaign.steps.some((s) => s.channel === "gift" || s.action === "gift");
+  const needsLi = campaign.steps.some((s) => s.channel === "linkedin" && !isRemovedStep(s));
   let liSender = campaign.linkedinSenderId;
-  let emailSender = campaign.emailSenderId;
-  let giftSender = campaign.giftSenderId;
   if (ws.sandbox) {
     if (needsLi && !liSender) liSender = await ensureSandboxSender(ctx, "linkedin");
-    if (needsEmail && !emailSender) emailSender = await ensureSandboxSender(ctx, "email");
-    if (needsGift && !giftSender) giftSender = await ensureSandboxSender(ctx, "gift");
-  } else if (needsGift && !giftSender) {
-    giftSender = await ensureSandboxSender(ctx, "gift");
   }
   if (needsLi && !liSender) throw new CommandError("LinkedIn sender required", 409);
-  if (needsEmail && !emailSender) throw new CommandError("email sender required", 409);
-  if (needsGift && !giftSender) throw new CommandError("gift sender required", 409);
 
   await ctx.db
     .update(tables.campaigns)
     .set({
       status: next,
       linkedinSenderId: liSender,
-      emailSenderId: emailSender,
-      giftSenderId: giftSender,
     })
     .where(eq(tables.campaigns.id, campaignId));
 
@@ -619,8 +884,6 @@ export async function startCampaign(ctx: AppContext, campaignId: string) {
       steps: campaign.steps,
       stepIndex: enrollment.nextStepIndex,
       linkedinSenderId: liSender ? asSenderId(liSender) : null,
-      emailSenderId: emailSender ? asSenderId(emailSender) : null,
-      giftSenderId: giftSender ? asSenderId(giftSender) : null,
       sandbox: Boolean(ws.sandbox),
       working,
       from: now,
@@ -632,13 +895,14 @@ export async function startCampaign(ctx: AppContext, campaignId: string) {
 }
 
 function nextEnabledIndex(
-  steps: Array<{ stepIndex: number; enabled?: number | boolean | null }>,
+  steps: Array<{ stepIndex: number; channel?: string; action?: string; enabled?: number | boolean | null }>,
   after: number,
 ): number | null {
   const sorted = [...steps].sort((a, b) => a.stepIndex - b.stepIndex);
   for (const step of sorted) {
     if (step.stepIndex <= after) continue;
     if (step.enabled === 0 || step.enabled === false) continue;
+    if (isRemovedStep(step)) continue;
     return step.stepIndex;
   }
   return null;
@@ -653,8 +917,6 @@ async function scheduleStep(
     steps: { stepIndex: number; channel: string; action: string; delayHours: number; enabled?: number | boolean | null }[];
     stepIndex: number;
     linkedinSenderId: SenderId | null;
-    emailSenderId: SenderId | null;
-    giftSenderId: SenderId | null;
     sandbox: boolean;
     working: WorkingHours;
     from: Date;
@@ -662,17 +924,12 @@ async function scheduleStep(
 ) {
   const step = input.steps.find((s) => s.stepIndex === input.stepIndex);
   if (!step) return;
-  if (step.enabled === 0 || step.enabled === false) {
+  if (step.enabled === 0 || step.enabled === false || isRemovedStep(step)) {
     const next = nextEnabledIndex(input.steps, input.stepIndex);
     if (next == null) return;
     return scheduleStep(ctx, { ...input, stepIndex: next });
   }
-  const senderId =
-    step.action === "gift" || step.channel === "gift"
-      ? input.giftSenderId
-      : step.channel === "email"
-        ? input.emailSenderId
-        : input.linkedinSenderId;
+  const senderId = input.linkedinSenderId;
   if (!senderId) return;
   const jobId = newId("job");
   const skipNow = Boolean(missingChannelReason(step, input.lead));
@@ -725,7 +982,7 @@ export async function resumeCampaign(ctx: AppContext, campaignId: string) {
   return startCampaign(ctx, campaignId);
 }
 
-export async function connectAccount(ctx: AppContext, channel: "linkedin" | "email") {
+export async function connectAccount(ctx: AppContext, channel: "linkedin" = "linkedin") {
   const ws = await getWorkspace(ctx);
   const url = await ctx.unipile.hostedAuthUrl(channel);
   const id = await ensureSandboxSender(ctx, channel);
@@ -736,7 +993,7 @@ export async function connectAccount(ctx: AppContext, channel: "linkedin" | "ema
       .set({
         status: "healthy",
         unipileAccountId: `mock_${channel}`,
-        displayName: channel === "linkedin" ? "Sandbox LinkedIn" : "Sandbox mailbox",
+        displayName: "Sandbox LinkedIn",
       })
       .where(eq(tables.senderAccounts.id, id));
   } else {
@@ -752,7 +1009,7 @@ export async function connectAccount(ctx: AppContext, channel: "linkedin" | "ema
         .set({
           status: "pending",
           unipileAccountId: null,
-          displayName: channel === "linkedin" ? "Connecting LinkedIn…" : "Connecting mailbox…",
+          displayName: "Connecting LinkedIn…",
         })
         .where(eq(tables.senderAccounts.id, id));
     }
@@ -767,7 +1024,7 @@ export async function syncUnipileAccounts(ctx: AppContext) {
   const mapped = [];
   for (const account of accounts) {
     const channel = channelFromUnipileAccount(account);
-    if (!channel) continue;
+    if (channel !== "linkedin") continue;
     const display =
       account.name ||
       account.connection_params?.mail ||
@@ -907,7 +1164,7 @@ export async function stopLead(ctx: AppContext, enrollmentId: string) {
 
 export async function replyToLead(
   ctx: AppContext,
-  input: { enrollmentId: string; body: string; channel?: "linkedin" | "email" },
+  input: { enrollmentId: string; body: string; channel?: "linkedin" },
 ) {
   const ws = await getWorkspace(ctx);
   if (ws.killSwitch) throw new CommandError("kill switch is on", 409);
@@ -933,42 +1190,26 @@ export async function replyToLead(
     .from(tables.messages)
     .where(eq(tables.messages.enrollmentId, enrollment.id));
   thread.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  const lastInbound = thread.find((m) => m.direction === "inbound");
-  const lastAny = thread[0];
-  const channel: "linkedin" | "email" =
-    input.channel ??
-    (lastInbound?.channel === "email" || lastAny?.channel === "email" ? "email" : "linkedin");
-  if (channel === "email" && !lead.email) throw new CommandError("no email on this lead");
+  const channel = "linkedin" as const;
   const profileUrl = lead.linkedinUrlNormalized ?? lead.linkedinUrl;
-  if (channel === "linkedin" && !profileUrl) throw new CommandError("no linkedin url on this lead");
+  if (!profileUrl) throw new CommandError("no linkedin url on this lead");
 
-  const senderId = channel === "email" ? campaign.emailSenderId : campaign.linkedinSenderId;
-  if (!senderId) throw new CommandError(`no ${channel} sender on this sequence`);
+  const senderId = campaign.linkedinSenderId;
+  if (!senderId) throw new CommandError("no linkedin sender on this sequence");
   const [sender] = await ctx.db
     .select()
     .from(tables.senderAccounts)
     .where(eq(tables.senderAccounts.id, senderId))
     .limit(1);
   const accountId = sender?.unipileAccountId ?? "mock";
-  const lastOutbound = thread.find((m) => m.direction === "outbound" && m.channel === channel);
-  let result;
-  if (channel === "linkedin") {
-    result = await ctx.unipile.message({ accountId, profileUrl: profileUrl!, body });
-  } else {
-    result = await ctx.unipile.sendEmail({
-      accountId,
-      to: lead.email ?? "",
-      subject: lastOutbound?.subject ? `Re: ${lastOutbound.subject.replace(/^Re:\s*/i, "")}` : "Re: your note",
-      body,
-    });
-  }
+  const result = await ctx.unipile.message({ accountId, profileUrl, body });
   await ctx.db.insert(tables.messages).values({
     id: newId("msg"),
     enrollmentId: enrollment.id,
     channel,
     direction: "outbound",
     body,
-    subject: channel === "email" ? (lastOutbound?.subject ?? "Re: your note") : null,
+    subject: null,
     providerId: result.providerId,
     createdAt: iso(ctx.clock.now()),
   });
@@ -1003,7 +1244,7 @@ async function cancelOpenJobs(ctx: AppContext, enrollmentId: string) {
 
 export async function recordReply(
   ctx: AppContext,
-  input: { enrollmentId?: string; leadId?: string; channel: "linkedin" | "email"; body: string },
+  input: { enrollmentId?: string; leadId?: string; channel?: "linkedin"; body: string },
 ) {
   let enrollment;
   if (input.enrollmentId) {
@@ -1032,7 +1273,7 @@ export async function recordReply(
   await ctx.db.insert(tables.messages).values({
     id: newId("msg"),
     enrollmentId: enrollment.id,
-    channel: input.channel,
+    channel: input.channel ?? "linkedin",
     direction: "inbound",
     body: input.body,
     subject: null,
@@ -1084,7 +1325,7 @@ export async function recordRestriction(ctx: AppContext, senderId: string) {
     .where(
       and(
         eq(tables.campaigns.workspaceId, ctx.workspaceId),
-        or(eq(tables.campaigns.linkedinSenderId, senderId), eq(tables.campaigns.emailSenderId, senderId)),
+        eq(tables.campaigns.linkedinSenderId, senderId),
       ),
     );
   for (const campaign of campaigns) {
@@ -1176,6 +1417,32 @@ async function senderHasInFlight(ctx: AppContext, senderId: string): Promise<boo
   return Boolean(rows[0]);
 }
 
+async function linkedinInvitesSentToday(ctx: AppContext, senderId: string, timezone: string): Promise<number> {
+  const today = calendarDay(ctx.clock.now(), timezone);
+  const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.senderId, senderId));
+  const sent = jobs.filter(
+    (job) => job.status === "sent" && job.claimedAt && calendarDay(new Date(job.claimedAt), timezone) === today,
+  );
+  if (sent.length === 0) return 0;
+  const campaignIds = [...new Set(sent.map((job) => job.campaignId))];
+  const steps = await ctx.db
+    .select()
+    .from(tables.sequenceSteps)
+    .where(inArray(tables.sequenceSteps.campaignId, campaignIds));
+  return sent.filter((job) => {
+    const step = steps.find((s) => s.campaignId === job.campaignId && s.stepIndex === job.stepIndex);
+    return step?.action === "connection";
+  }).length;
+}
+
+async function jobIsLinkedInInvite(ctx: AppContext, job: { campaignId: string; stepIndex: number }): Promise<boolean> {
+  const steps = await ctx.db
+    .select()
+    .from(tables.sequenceSteps)
+    .where(eq(tables.sequenceSteps.campaignId, job.campaignId));
+  return steps.find((s) => s.stepIndex === job.stepIndex)?.action === "connection";
+}
+
 export async function tick(ctx: AppContext, opts?: { ignoreWorkingHours?: boolean }): Promise<{ processed: number }> {
   const ws = await getWorkspace(ctx);
   const now = ctx.clock.now();
@@ -1204,6 +1471,10 @@ export async function tick(ctx: AppContext, opts?: { ignoreWorkingHours?: boolea
 
   for (const job of due) {
     if (claimedSenders.has(job.senderId) || (await senderHasInFlight(ctx, job.senderId))) continue;
+    if (await jobIsLinkedInInvite(ctx, job)) {
+      const sentToday = await linkedinInvitesSentToday(ctx, job.senderId, working.timezone);
+      if (sentToday >= LINKEDIN_INVITE_DAILY_CAP) continue;
+    }
     const [sender] = await ctx.db
       .select()
       .from(tables.senderAccounts)
@@ -1275,6 +1546,11 @@ async function executeJob(ctx: AppContext, jobId: string) {
     return;
   }
 
+  if (isRemovedStep(step)) {
+    await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", isEmailStep(step) ? "email removed" : "gift removed");
+    return;
+  }
+
   if ((step.skipOverdueHours ?? 0) > 0) {
     const due = new Date(job.dueAt).getTime();
     if (ctx.clock.now().getTime() > due + step.skipOverdueHours * 3600 * 1000) {
@@ -1342,7 +1618,7 @@ async function executeJob(ctx: AppContext, jobId: string) {
       body,
       imageUrl: step.imageUrl,
     });
-  } else if (step.action === "message") {
+  } else {
     if (!fields.linkedinUrl) {
       await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "no linkedin url");
       return;
@@ -1352,31 +1628,6 @@ async function executeJob(ctx: AppContext, jobId: string) {
       profileUrl: fields.linkedinUrl,
       body,
       imageUrl: step.imageUrl,
-    });
-  } else if (step.action === "gift" || step.channel === "gift") {
-    const item = step.giftItem || subject || "cookies";
-    const note = body || step.giftNote || "";
-    const giftResult = await giftOf(ctx).send({
-      item,
-      note,
-      name: lead.fullName,
-      company: lead.company,
-      address: giftAddressOf(lead),
-    });
-    result = { providerId: giftResult.providerId, dryRun: giftResult.dryRun };
-    await outbox(ctx, "gift_queued", {
-      jobId,
-      vendor: giftResult.vendor,
-      item,
-      charged: giftResult.charged,
-      dryRun: giftResult.dryRun,
-    });
-  } else {
-    result = await ctx.unipile.sendEmail({
-      accountId,
-      to: lead.email ?? "",
-      subject: subject ?? "",
-      body,
     });
   }
 
@@ -1434,8 +1685,6 @@ async function executeJob(ctx: AppContext, jobId: string) {
     steps,
     stepIndex: nextIndex,
     linkedinSenderId: campaign?.linkedinSenderId ? asSenderId(campaign.linkedinSenderId) : null,
-    emailSenderId: campaign?.emailSenderId ? asSenderId(campaign.emailSenderId) : null,
-    giftSenderId: campaign?.giftSenderId ? asSenderId(campaign.giftSenderId) : null,
     sandbox: Boolean(ws.sandbox),
     working: hoursOf(ws),
     from: ctx.clock.now(),
@@ -1495,173 +1744,11 @@ async function finishJob(
       steps,
       stepIndex: nextIndex,
       linkedinSenderId: campaign?.linkedinSenderId ? asSenderId(campaign.linkedinSenderId) : null,
-      emailSenderId: campaign?.emailSenderId ? asSenderId(campaign.emailSenderId) : null,
-      giftSenderId: campaign?.giftSenderId ? asSenderId(campaign.giftSenderId) : null,
       sandbox: Boolean(ws.sandbox),
       working: hoursOf(ws),
       from: ctx.clock.now(),
     });
   }
-}
-
-function dataOf(ctx: AppContext): DataPort {
-  return ctx.data ?? new StubData(ctx.unipile);
-}
-
-function giftOf(ctx: AppContext): GiftPort {
-  return ctx.gift ?? new MockGift();
-}
-
-function csvEscape(value: string): string {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-
-function hitsToCsv(hits: LeadSearchHit[]): string {
-  const header =
-    "first_name,last_name,company,title,email,linkedin_url,opening_line,public_url,custom_source";
-  const rows = hits.map((h) =>
-    [
-      h.firstName,
-      h.lastName,
-      h.company,
-      h.title,
-      h.email ?? "",
-      h.linkedinUrl ?? "",
-      h.openingLine,
-      h.publicUrl ?? "",
-      h.source ?? "unknown",
-    ]
-      .map(csvEscape)
-      .join(","),
-  );
-  return [header, ...rows].join("\n");
-}
-
-export async function searchPeople(
-  ctx: AppContext,
-  input: { brief: string; limit?: number; people?: LeadSearchHit[]; listName?: string },
-) {
-  const limit = input.limit ?? 10;
-  const hits = await dataOf(ctx).searchPeople({
-    brief: input.brief,
-    limit,
-    people: input.people,
-  });
-  if (hits.length === 0) {
-    return {
-      listId: null as string | null,
-      name: input.listName ?? input.brief.slice(0, 80),
-      counts: { imported: 0, merged: 0, skipped: 0, invalid: 0 },
-      people: [] as LeadSearchHit[],
-      source: "none",
-      sources: [] as string[],
-    };
-  }
-  const imported = await importLeads(ctx, {
-    listName: input.listName ?? input.brief.slice(0, 80),
-    content: hitsToCsv(hits),
-    format: "csv",
-  });
-  const sources = [...new Set(hits.map((h) => h.source ?? "unknown"))];
-  await audit(ctx, "search_people", { listId: imported.listId, brief: input.brief, count: hits.length, sources });
-  return { ...imported, people: hits, source: sources[0] ?? "none", sources };
-}
-
-export async function researchLeads(ctx: AppContext, listId: string) {
-  const list = await getList(ctx, listId);
-  const port = dataOf(ctx);
-  const updated = [];
-  for (const lead of list.leads) {
-    const researched = await port.researchLead(hitToResearchInput(lead));
-    await ctx.db
-      .update(tables.leads)
-      .set({
-        openingLine: researched.openingLine,
-        publicUrl: researched.publicUrl,
-      })
-      .where(eq(tables.leads.id, lead.id));
-    updated.push({
-      id: lead.id,
-      fullName: lead.fullName,
-      openingLine: researched.openingLine,
-      publicUrl: researched.publicUrl,
-      notes: researched.notes,
-    });
-  }
-  await audit(ctx, "research_leads", { listId, count: updated.length });
-  return { listId, researched: updated.length, leads: updated };
-}
-
-export async function qualifyLeads(ctx: AppContext, listId: string, criteria: string) {
-  const list = await getList(ctx, listId);
-  const rows = [];
-  for (const lead of list.leads) {
-    const blob = [
-      lead.fullName,
-      lead.title,
-      lead.company,
-      lead.openingLine,
-      lead.email,
-      lead.linkedinUrl,
-      lead.publicUrl,
-    ].join(" ");
-    const result = qualifyLead(blob, criteria);
-    const custom = JSON.parse(lead.customJson || "{}") as Record<string, unknown>;
-    custom.qualification = {
-      decision: result.decision,
-      explanation: result.explanation,
-      criteria,
-      score: result.score,
-      reason: result.reason,
-      at: iso(ctx.clock.now()),
-    };
-    custom.score = result.score;
-    await ctx.db
-      .update(tables.leads)
-      .set({ customJson: JSON.stringify(custom) })
-      .where(eq(tables.leads.id, lead.id));
-    rows.push({
-      id: lead.id,
-      fullName: lead.fullName,
-      decision: result.decision,
-      explanation: result.explanation,
-      score: result.score,
-      reason: result.reason,
-    });
-  }
-  await audit(ctx, "qualify_leads", { listId, criteria, count: rows.length });
-  return { listId, criteria, leads: rows };
-}
-
-export async function promptToCampaign(
-  ctx: AppContext,
-  input: {
-    brief: string;
-    limit?: number;
-    name?: string;
-    templateKey?: TemplateKey;
-    people?: LeadSearchHit[];
-  },
-) {
-  const searched = await searchPeople(ctx, {
-    brief: input.brief,
-    limit: input.limit ?? 10,
-    people: input.people,
-    listName: input.name ?? input.brief.slice(0, 80),
-  });
-  if (!searched.listId) {
-    throw new CommandError("no people found for that brief — add APOLLO_API_KEY or pass people", 404);
-  }
-  await researchLeads(ctx, searched.listId);
-  const created = await createCampaign(ctx, {
-    name: input.name ?? input.brief.slice(0, 80),
-    templateKey: input.templateKey ?? "linkedin_only",
-  });
-  await addLeadsToCampaign(ctx, created.id, { listId: searched.listId });
-  const campaign = await getCampaign(ctx, created.id);
-  await audit(ctx, "prompt_to_campaign", { campaignId: created.id, listId: searched.listId });
-  return { ...campaign, listId: searched.listId };
 }
 
 export type CrmContact = {
@@ -1719,80 +1806,6 @@ export async function exportLeadsToCrm(ctx: AppContext, listId: string) {
   await outbox(ctx, "crm_export", payload);
   await audit(ctx, "export_leads", { listId, count: contacts.length, destination: payload.destination });
   return payload;
-}
-
-export async function listSignals(ctx: AppContext, input?: { sinceDays?: number }) {
-  const days = input?.sinceDays ?? 7;
-  const since = new Date(ctx.clock.now().getTime() - days * 24 * 60 * 60 * 1000).toISOString();
-  const rows = await ctx.db
-    .select()
-    .from(tables.signals)
-    .where(eq(tables.signals.workspaceId, ctx.workspaceId));
-  return rows.filter((row) => row.occurredAt >= since).sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
-}
-
-export async function ingestSignals(
-  ctx: AppContext,
-  input?: {
-    signals?: Array<{
-      type: SignalType;
-      title: string;
-      detail?: string;
-      company?: string;
-      personName?: string;
-      source?: string;
-      occurredAt?: string;
-      leadId?: string;
-    }>;
-  },
-) {
-  const now = iso(ctx.clock.now());
-  const drafts =
-    input?.signals?.length
-      ? input.signals.map((s) => ({
-          type: s.type,
-          title: s.title,
-          detail: s.detail ?? "",
-          company: s.company ?? "",
-          personName: s.personName ?? "",
-          source: s.source ?? "provided",
-          occurredAt: s.occurredAt ?? now,
-          leadId: s.leadId ?? null,
-        }))
-      : demoSignalsFromCatalog(ctx.clock.now()).map((s) => ({ ...s, leadId: null as string | null }));
-  const existing = await ctx.db
-    .select()
-    .from(tables.signals)
-    .where(eq(tables.signals.workspaceId, ctx.workspaceId));
-  let created = 0;
-  for (const draft of drafts) {
-    const dup = existing.find(
-      (row) =>
-        row.signalType === draft.type &&
-        row.company === draft.company &&
-        row.personName === draft.personName &&
-        row.occurredAt.slice(0, 10) === draft.occurredAt.slice(0, 10),
-    );
-    if (dup) continue;
-    const row = {
-      id: newId("sig"),
-      workspaceId: ctx.workspaceId,
-      leadId: draft.leadId,
-      signalType: draft.type,
-      title: draft.title,
-      detail: draft.detail,
-      company: draft.company,
-      personName: draft.personName,
-      source: draft.source,
-      occurredAt: draft.occurredAt,
-      createdAt: now,
-    };
-    await ctx.db.insert(tables.signals).values(row);
-    existing.push(row);
-    created += 1;
-  }
-  await audit(ctx, "ingest_signals", { created, total: existing.length });
-  return { created, signals: await listSignals(ctx) };
 }
 
 export type LearningSuggestion = {
@@ -1866,37 +1879,29 @@ export async function applyLearnings(ctx: AppContext, campaignId: string) {
   const source = await getCampaign(ctx, campaignId);
   const learnings = await suggestLearnings(ctx, campaignId);
   const winner = learnings.suggestions.find((s) => s.kind === "double_down" && s.suggestedBody);
-  const steps = source.steps.map((step) => ({
-    stepIndex: step.stepIndex,
+  const kept = source.steps.filter((step) => !isRemovedStep(step));
+  const mapped = (kept.length ? kept : stepsForTemplate("linkedin_only")).map((step, index) => ({
+    stepIndex: index,
     channel: step.channel as SequenceStepDraft["channel"],
     action: step.action as SequenceStepDraft["action"],
     delayHours: step.delayHours,
     bodyTemplate:
-      winner && step.stepIndex !== winner.stepIndex && step.action !== "gift"
+      winner && "stepIndex" in step && step.stepIndex !== winner.stepIndex
         ? winner.suggestedBody ?? step.bodyTemplate
         : step.bodyTemplate,
     subjectTemplate: step.subjectTemplate,
-    enabled: step.enabled !== 0,
+    enabled: "enabled" in step ? step.enabled !== 0 && step.enabled !== false : true,
     skipOverdueHours: step.skipOverdueHours,
     imageUrl: step.imageUrl,
-    giftItem: step.giftItem,
-    giftNote: step.giftNote,
   }));
   const created = await createCampaign(ctx, {
     name: `${source.name} · learnings`,
-    templateKey: (source.templateKey as TemplateKey | null) ?? undefined,
-    steps,
+    templateKey: "linkedin_only",
+    steps: mapped,
   });
   await audit(ctx, "apply_learnings", { sourceId: campaignId, draftId: created.id, status: "draft" });
   return { ...created, status: "draft" as const, sourceId: campaignId, started: false, suggestions: learnings.suggestions };
 }
-
-export function dataSourceNames(ctx: AppContext): string[] {
-  const port = dataOf(ctx);
-  return port instanceof WaterfallData ? port.sourceNames() : ["stub_catalog"];
-}
-
-export { SIGNAL_TYPES };
 
 export function defaultClock(): Clock {
   return { now: () => new Date() };

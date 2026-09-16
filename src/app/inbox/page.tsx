@@ -34,9 +34,9 @@ export default function InboxPage() {
   const [rows, setRows] = useState<Msg[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [channel, setChannel] = useState<"linkedin" | "email">("linkedin");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "needs_reply" | "waiting" | "stopped">("all");
 
   async function refresh() {
     const res = await fetch("/api/inbox");
@@ -73,17 +73,15 @@ export default function InboxPage() {
     if (!openId && threads[0]) setOpenId(threads[0].enrollmentId);
   }, [threads, openId]);
 
-  const active = threads.find((t) => t.enrollmentId === openId) ?? threads[0] ?? null;
+  function bucket(thread: Thread): "needs_reply" | "waiting" | "stopped" {
+    if (thread.enrollmentStatus === "stopped" || thread.enrollmentStatus === "replied") return "stopped";
+    const last = thread.messages[thread.messages.length - 1];
+    if (last?.direction === "inbound") return "needs_reply";
+    return "waiting";
+  }
 
-  useEffect(() => {
-    if (!active) return;
-    const last = [...active.messages].reverse()[0];
-    const hasEmail = Boolean(active.lead?.email);
-    const hasLi = Boolean(active.lead?.linkedinUrlNormalized ?? active.lead?.linkedinUrl);
-    if (last?.channel === "email" && hasEmail) setChannel("email");
-    else if (hasLi) setChannel("linkedin");
-    else if (hasEmail) setChannel("email");
-  }, [active?.enrollmentId]);
+  const visible = threads.filter((thread) => filter === "all" || bucket(thread) === filter);
+  const active = visible.find((t) => t.enrollmentId === openId) ?? visible[0] ?? null;
 
   async function stop(enrollmentId: string) {
     await fetch("/api/inbox/stop", {
@@ -102,7 +100,7 @@ export default function InboxPage() {
       const res = await fetch("/api/inbox/reply", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enrollmentId: active.enrollmentId, body: draft, channel }),
+        body: JSON.stringify({ enrollmentId: active.enrollmentId, body: draft, channel: "linkedin" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "reply failed");
@@ -116,21 +114,43 @@ export default function InboxPage() {
   }
 
   const canLinkedIn = Boolean(active?.lead?.linkedinUrlNormalized ?? active?.lead?.linkedinUrl);
-  const canEmail = Boolean(active?.lead?.email);
 
   return (
     <AppShell>
       <h1 className="text-3xl">Inbox</h1>
       <p className="mt-2 max-w-2xl text-(--muted)">
-        Replies land here and stop that person in the sequence. You can write back without starting
-        another campaign.
+        Sort who needs a LinkedIn reply. Answering here does not start another campaign. Stop lead
+        ends that person in the sequence.
       </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {(
+          [
+            ["all", "All"],
+            ["needs_reply", "Needs reply"],
+            ["waiting", "Waiting on them"],
+            ["stopped", "Stopped"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={`rounded-full border px-3 py-1 text-sm ${
+              filter === key ? "border-(--ochre) bg-(--ochre) text-white" : "border-(--line)"
+            }`}
+            onClick={() => setFilter(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {threads.length === 0 ? (
         <p className="mt-6 text-(--muted)">No messages yet. Start a sequence first.</p>
+      ) : visible.length === 0 ? (
+        <p className="mt-6 text-(--muted)">Nothing in this view.</p>
       ) : (
         <div className="mt-6 grid gap-4 md:grid-cols-[16rem_1fr]">
           <ul className="space-y-1">
-            {threads.map((thread) => {
+            {visible.map((thread) => {
               const last = thread.messages[thread.messages.length - 1];
               return (
                 <li key={thread.enrollmentId}>
@@ -138,7 +158,7 @@ export default function InboxPage() {
                     type="button"
                     className={`w-full rounded border px-3 py-2 text-left ${
                       active?.enrollmentId === thread.enrollmentId
-                        ? "border-(--ink) bg-(--panel)"
+                        ? "border-(--ochre) bg-(--panel)"
                         : "border-(--line) bg-(--panel)"
                     }`}
                     onClick={() => setOpenId(thread.enrollmentId)}
@@ -175,41 +195,17 @@ export default function InboxPage() {
                 ))}
               </ol>
               <div className="mt-4 border-t border-(--line) pt-4">
-                <div className="flex flex-wrap gap-2">
-                  {canLinkedIn ? (
-                    <button
-                      type="button"
-                      className={`rounded-full border px-3 py-1 text-sm ${
-                        channel === "linkedin" ? "border-(--ink) bg-(--ink) text-(--panel)" : "border-(--line)"
-                      }`}
-                      onClick={() => setChannel("linkedin")}
-                    >
-                      LinkedIn
-                    </button>
-                  ) : null}
-                  {canEmail ? (
-                    <button
-                      type="button"
-                      className={`rounded-full border px-3 py-1 text-sm ${
-                        channel === "email" ? "border-(--ink) bg-(--ink) text-(--panel)" : "border-(--line)"
-                      }`}
-                      onClick={() => setChannel("email")}
-                    >
-                      Email
-                    </button>
-                  ) : null}
-                </div>
                 <textarea
                   className="mt-3 h-24 w-full rounded border border-(--line) bg-(--input) p-3 text-sm"
-                  placeholder="Reply…"
+                  placeholder="Reply on LinkedIn…"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                 />
                 <button
                   type="button"
-                  disabled={busy || !draft.trim() || (!canLinkedIn && !canEmail)}
+                  disabled={busy || !draft.trim() || !canLinkedIn}
                   onClick={() => void reply()}
-                  className="mt-3 rounded-md bg-(--ink) px-4 py-2 text-(--panel) disabled:opacity-40"
+                  className="btn-primary mt-3 rounded-md px-4 py-2 disabled:opacity-40"
                 >
                   {busy ? "Sending…" : "Reply"}
                 </button>

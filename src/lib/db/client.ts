@@ -58,6 +58,9 @@ CREATE TABLE IF NOT EXISTS leads (
   full_name TEXT NOT NULL DEFAULT '',
   company TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL DEFAULT '',
+  headline TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  about TEXT NOT NULL DEFAULT '',
   email TEXT,
   linkedin_url TEXT,
   linkedin_url_normalized TEXT,
@@ -78,8 +81,6 @@ CREATE TABLE IF NOT EXISTS campaigns (
   status TEXT NOT NULL,
   template_key TEXT,
   linkedin_sender_id TEXT,
-  email_sender_id TEXT,
-  gift_sender_id TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sequence_steps (
@@ -93,9 +94,7 @@ CREATE TABLE IF NOT EXISTS sequence_steps (
   subject_template TEXT,
   enabled INTEGER NOT NULL DEFAULT 1,
   skip_overdue_hours INTEGER NOT NULL DEFAULT 72,
-  image_url TEXT,
-  gift_item TEXT,
-  gift_note TEXT
+  image_url TEXT
 );
 CREATE TABLE IF NOT EXISTS enrollments (
   id TEXT PRIMARY KEY,
@@ -200,15 +199,49 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE sequence_steps ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE sequence_steps ADD COLUMN skip_overdue_hours INTEGER NOT NULL DEFAULT 72",
     "ALTER TABLE sequence_steps ADD COLUMN image_url TEXT",
-    "ALTER TABLE sequence_steps ADD COLUMN gift_item TEXT",
-    "ALTER TABLE sequence_steps ADD COLUMN gift_note TEXT",
-    "ALTER TABLE campaigns ADD COLUMN gift_sender_id TEXT",
+    "ALTER TABLE leads ADD COLUMN headline TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE leads ADD COLUMN location TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE leads ADD COLUMN about TEXT NOT NULL DEFAULT ''",
   ]) {
     try {
       await client.execute(sql);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (!/duplicate column/i.test(msg)) throw err;
+    }
+  }
+  await client.executeMultiple(`
+DELETE FROM messages WHERE enrollment_id IN (
+  SELECT id FROM enrollments WHERE campaign_id IN (
+    SELECT id FROM campaigns WHERE name IN ('Live gift draft', 'Live gift draft · learnings')
+  )
+);
+DELETE FROM send_jobs WHERE campaign_id IN (
+  SELECT id FROM campaigns WHERE name IN ('Live gift draft', 'Live gift draft · learnings')
+);
+DELETE FROM enrollments WHERE campaign_id IN (
+  SELECT id FROM campaigns WHERE name IN ('Live gift draft', 'Live gift draft · learnings')
+);
+DELETE FROM sequence_steps WHERE campaign_id IN (
+  SELECT id FROM campaigns WHERE name IN ('Live gift draft', 'Live gift draft · learnings')
+);
+DELETE FROM campaigns WHERE name IN ('Live gift draft', 'Live gift draft · learnings');
+DELETE FROM sender_accounts WHERE channel = 'gift';
+DELETE FROM sender_accounts WHERE channel = 'email';
+DELETE FROM sequence_steps WHERE channel = 'email' OR action = 'email';
+DELETE FROM signals;
+`);
+  for (const sql of [
+    "ALTER TABLE sequence_steps DROP COLUMN gift_item",
+    "ALTER TABLE sequence_steps DROP COLUMN gift_note",
+    "ALTER TABLE campaigns DROP COLUMN gift_sender_id",
+    "ALTER TABLE campaigns DROP COLUMN email_sender_id",
+  ]) {
+    try {
+      await client.execute(sql);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/no such column|duplicate column/i.test(msg)) throw err;
     }
   }
 }

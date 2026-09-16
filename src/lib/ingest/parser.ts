@@ -4,6 +4,9 @@ export type LeadDraft = {
   fullName: string;
   company: string;
   title: string;
+  headline: string;
+  location: string;
+  about: string;
   email: string | null;
   linkedinUrl: string | null;
   linkedinUrlNormalized: string | null;
@@ -27,6 +30,9 @@ const HEADER_ALIASES: Record<string, string[]> = {
   full_name: ["full_name", "name", "full name", "fullname"],
   company: ["company", "company_name", "org", "organization", "account"],
   title: ["title", "job_title", "role", "position"],
+  headline: ["headline"],
+  location: ["location", "city", "region"],
+  about: ["about", "summary", "bio"],
   email: ["email", "email_address", "emailaddress", "mail"],
   linkedin_url: [
     "linkedin_url",
@@ -174,6 +180,9 @@ function draftFromMap(raw: Record<string, string>): LeadDraft {
     fullName: fullName || `${firstName} ${lastName}`.trim(),
     company: mapped.company?.trim() ?? "",
     title: mapped.title?.trim() ?? "",
+    headline: mapped.headline?.trim() ?? "",
+    location: mapped.location?.trim() ?? "",
+    about: mapped.about?.trim() ?? "",
     email,
     linkedinUrl,
     linkedinUrlNormalized,
@@ -198,7 +207,9 @@ function parseCsvLeads(text: string): LeadDraft[] {
   const table = parseCsv(text);
   if (table.length === 0) return [];
   const headers = table[0].map((h) => h.trim());
-  const looksLikeHeader = headers.some((h) => canonicalField(h) || /name|email|linkedin/i.test(h));
+  const firstIsUrl = Boolean(normalizeLinkedInUrl(headers[0] ?? "") || headers.every((h) => normalizeLinkedInUrl(h)));
+  const looksLikeHeader =
+    !firstIsUrl && headers.some((h) => canonicalField(h) || /^(name|email|linkedin)$/i.test(h));
   const start = looksLikeHeader ? 1 : 0;
   const cols = looksLikeHeader ? headers : headers.map((_, i) => `col_${i}`);
   const rows: LeadDraft[] = [];
@@ -259,19 +270,78 @@ function parseMarkdownBullets(text: string): LeadDraft[] {
   return rows;
 }
 
-export function detectFormat(text: string): "csv" | "markdown" {
+function extractLinkedInFromLine(line: string): string | null {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+  const direct = normalizeLinkedInUrl(trimmed);
+  if (direct) return direct;
+  const match = trimmed.match(/https?:\/\/[^\s)]+/i) || trimmed.match(/linkedin\.com\/in\/[^\s)]+/i);
+  return match ? normalizeLinkedInUrl(match[0]) : null;
+}
+
+function nameFromLinkedInSlug(url: string): string {
+  const normalized = normalizeLinkedInUrl(url);
+  if (!normalized) return "";
+  const slug = normalized.replace(/^https:\/\/www\.linkedin\.com\/in\//, "");
+  return slug
+    .split("-")
+    .filter((part) => part && !/^\d+$/.test(part))
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function parseUrlList(text: string): LeadDraft[] {
+  const rows: LeadDraft[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const url = extractLinkedInFromLine(line);
+    if (!url) continue;
+    const leftover = line
+      .replace(/https?:\/\/[^\s)]+/gi, "")
+      .replace(/linkedin\.com\/in\/[^\s)]+/gi, "")
+      .replace(/^[-*]\s+/, "")
+      .replace(/[()[\]]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    rows.push(
+      draftFromMap({
+        name: leftover || nameFromLinkedInSlug(url),
+        linkedin_url: url,
+      }),
+    );
+  }
+  return rows;
+}
+
+function looksLikeUrlList(text: string): boolean {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return false;
+  if (lines[0].includes(",") && canonicalField(lines[0].split(",")[0] ?? "")) return false;
+  const hits = lines.filter((line) => Boolean(extractLinkedInFromLine(line)));
+  return hits.length > 0 && hits.length >= Math.ceil(lines.length / 2);
+}
+
+export function detectFormat(text: string): "csv" | "markdown" | "urls" {
   const trimmed = text.trim();
   if (trimmed.includes("|") && /\n\s*\|?\s*-{3,}/.test(trimmed)) return "markdown";
   if (/^[-*]\s+/m.test(trimmed) && /linkedin\.com/i.test(trimmed) && !trimmed.includes(",")) {
     return "markdown";
   }
+  if (looksLikeUrlList(trimmed)) return "urls";
   return "csv";
 }
 
-export function parseLeads(text: string, format: "csv" | "markdown" | "auto" = "auto"): ParseResult {
+export function parseLeads(
+  text: string,
+  format: "csv" | "markdown" | "urls" | "auto" = "auto",
+): ParseResult {
   const kind = format === "auto" ? detectFormat(text) : format;
   let rows: LeadDraft[] = [];
-  if (kind === "markdown") {
+  if (kind === "urls") {
+    rows = parseUrlList(text);
+  } else if (kind === "markdown") {
     rows = parseMarkdownTable(text) ?? parseMarkdownBullets(text);
   } else {
     rows = parseCsvLeads(text);

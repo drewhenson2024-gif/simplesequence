@@ -7,6 +7,7 @@ import {
   createCampaign,
   getCampaign,
   getInbox,
+  getList,
   importLeads,
   recordReply,
   recordRestriction,
@@ -73,7 +74,7 @@ describe("commands", () => {
 
   it("create_campaign is always draft", async () => {
     const { ctx } = await testApp();
-    const created = await createCampaign(ctx, { name: "Q3", templateKey: "mixed" });
+    const created = await createCampaign(ctx, { name: "Q3", templateKey: "linkedin_only" });
     expect(created.status).toBe("draft");
   });
 
@@ -118,9 +119,9 @@ describe("commands", () => {
     const list = await importLeads(ctx, { listName: "small", content: fixture("csv-6.csv") });
     const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
-    expect(unipile.calls).toHaveLength(0);
+    expect(unipile.calls.filter((c) => c.kind !== "lookup")).toHaveLength(0);
     await startCampaign(ctx, campaign.id);
-    expect(unipile.calls).toHaveLength(0);
+    expect(unipile.calls.filter((c) => c.kind !== "lookup")).toHaveLength(0);
   });
 
   it("tick sends with mock Unipile after start and clock advance", async () => {
@@ -186,49 +187,40 @@ describe("commands", () => {
     expect(after.status).toBe("restricted");
   });
 
-  it("skips email steps when the lead has no email", async () => {
-    const { ctx, unipile, advance } = await testApp();
-    const content =
-      "name,linkedin_url\nNo Mail,https://www.linkedin.com/in/no-mail\n";
-    const list = await importLeads(ctx, { listName: "li-only-person", content });
-    const campaign = await createCampaign(ctx, { name: "mixed", templateKey: "mixed" });
-    await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
-    await startCampaign(ctx, campaign.id);
-    advance(20 * 60 * 1000);
-    await tick(ctx, { ignoreWorkingHours: true });
-    advance(30 * 60 * 60 * 1000);
-    await tick(ctx, { ignoreWorkingHours: true });
-    advance(50 * 60 * 60 * 1000);
-    await tick(ctx, { ignoreWorkingHours: true });
-    expect(unipile.calls.filter((c) => c.kind === "email")).toHaveLength(0);
-    const after = await getCampaign(ctx, campaign.id);
-    const emailJob = after.jobs.find((j) => j.action === "email");
-    expect(emailJob?.status).toBe("skipped");
-    expect(emailJob?.skipReason).toBe("no email");
+  it("rejects email steps", async () => {
+    const { ctx } = await testApp();
+    await expect(
+      createCampaign(ctx, {
+        name: "mail",
+        steps: [
+          {
+            stepIndex: 0,
+            channel: "email" as never,
+            action: "email" as never,
+            delayHours: 0,
+            bodyTemplate: "Hi",
+            subjectTemplate: "Hello",
+          },
+        ],
+      }),
+    ).rejects.toThrow(/email steps are not supported/);
   });
 
-  it("skips LinkedIn when the lead has no profile and continues to email", async () => {
+  it("skips LinkedIn when the lead has no profile", async () => {
     const { ctx, unipile, advance } = await testApp();
     const list = await importLeads(ctx, {
-      listName: "email-only-person",
+      listName: "no-profile",
       content: "name,email\nNo Li,noli@example.com\n",
     });
-    const campaign = await createCampaign(ctx, { name: "mixed", templateKey: "mixed" });
+    const campaign = await createCampaign(ctx, { name: "LI", templateKey: "linkedin_only" });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
     await tick(ctx, { ignoreWorkingHours: true });
-    advance(20 * 60 * 1000);
-    await tick(ctx, { ignoreWorkingHours: true });
-    advance(50 * 60 * 60 * 1000);
-    await tick(ctx, { ignoreWorkingHours: true });
     expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(0);
-    expect(unipile.calls.filter((c) => c.kind === "email")).toHaveLength(1);
+    expect(unipile.calls.filter((c) => c.kind === "email")).toHaveLength(0);
     const after = await getCampaign(ctx, campaign.id);
-    const liJobs = after.jobs.filter((j) => j.channel === "linkedin");
-    expect(liJobs.every((j) => j.status === "skipped")).toBe(true);
-    expect(liJobs[0]?.skipReason).toBe("no linkedin url");
-    expect(after.jobs.find((j) => j.action === "email")?.status).toBe("sent");
+    expect(after.jobs.find((j) => j.action === "connection")?.skipReason).toBe("no linkedin url");
   });
 
   it("skips a LinkedIn message as not connected when the invite was skipped", async () => {
@@ -258,14 +250,6 @@ describe("commands", () => {
           bodyTemplate: "Thanks for connecting",
           subjectTemplate: null,
         },
-        {
-          stepIndex: 2,
-          channel: "email",
-          action: "email",
-          delayHours: 0,
-          bodyTemplate: "Hi {{first_name}}",
-          subjectTemplate: "Hello",
-        },
       ],
     });
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
@@ -274,14 +258,11 @@ describe("commands", () => {
     await tick(ctx, { ignoreWorkingHours: true });
     advance(20 * 60 * 1000);
     await tick(ctx, { ignoreWorkingHours: true });
-    advance(20 * 60 * 1000);
-    await tick(ctx, { ignoreWorkingHours: true });
     const after = await getCampaign(ctx, campaign.id);
     expect(after.jobs.find((j) => j.action === "connection")?.skipReason).toBe("overdue");
     expect(after.jobs.find((j) => j.action === "message")?.skipReason).toBe("not connected");
-    expect(after.jobs.find((j) => j.action === "email")?.status).toBe("sent");
     expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(0);
-    expect(unipile.calls.filter((c) => c.kind === "email").length).toBeGreaterThan(0);
+    expect(unipile.calls.filter((c) => c.kind === "email")).toHaveLength(0);
   });
 
   it("inbox reply sends via Unipile without restarting the sequence", async () => {
@@ -330,5 +311,68 @@ describe("commands", () => {
     await tick(ctx, { ignoreWorkingHours: true });
     const invite = unipile.calls.find((c) => c.kind === "invite");
     expect(invite?.input).toMatchObject({ imageUrl: "https://example.com/card.png" });
+  });
+
+  it("caps LinkedIn invites per sender per day", async () => {
+    const { ctx, unipile, advance } = await testApp();
+    const header = "first_name,last_name,company,title,email,linkedin_url";
+    const rows = Array.from(
+      { length: 30 },
+      (_, i) => `P${i},Lead${i},Co,Ops,p${i}@x.com,https://www.linkedin.com/in/p${i}`,
+    );
+    const list = await importLeads(ctx, { listName: "cap", content: [header, ...rows].join("\n") });
+    const campaign = await createCampaign(ctx, { name: "LI cap", templateKey: "linkedin_only" });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    for (let i = 0; i < 25; i += 1) {
+      await tick(ctx, { ignoreWorkingHours: true });
+    }
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(25);
+    const extra = await tick(ctx, { ignoreWorkingHours: true });
+    expect(extra.processed).toBe(0);
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(25);
+  });
+
+  it("fills name, title, company, and headline from a LinkedIn lookup", async () => {
+    const { ctx, unipile } = await testApp();
+    const list = await importLeads(ctx, {
+      listName: "urls",
+      urls: ["https://www.linkedin.com/in/priya-rao"],
+    });
+    const got = await getList(ctx, list.listId);
+    const lead = got.leads[0];
+    expect(lead?.fullName).toBe("Priya Rao");
+    expect(lead?.title).toBe("Operator");
+    expect(lead?.company).toBe("Example");
+    expect(lead?.headline).toBe("Operator at Example");
+    expect(lead?.location).toBe("Example City");
+    expect(lead?.about).toBe("Builds sequences for operators.");
+    expect(lead?.openingLine).toBe("");
+    expect(unipile.calls.some((c) => c.kind === "lookup")).toBe(true);
+  });
+
+  it("does not overwrite CSV company, title, or opener", async () => {
+    const { ctx } = await testApp();
+    const list = await importLeads(ctx, { listName: "csv", content: fixture("csv-6.csv") });
+    const ada = (await getList(ctx, list.listId)).leads.find((l) => l.email === "ada@example.com");
+    expect(ada?.company).toBe("Analytical Engines");
+    expect(ada?.title).toBe("Countess");
+    expect(ada?.openingLine).toBe("Saw your note on difference engines");
+  });
+
+  it("still imports when profile lookup fails", async () => {
+    const { ctx, unipile } = await testApp();
+    unipile.lookupProfile = async () => {
+      throw new Error("unipile down");
+    };
+    const list = await importLeads(ctx, {
+      listName: "fail",
+      urls: ["https://www.linkedin.com/in/priya-rao"],
+    });
+    expect(list.counts.imported).toBe(1);
+    const lead = (await getList(ctx, list.listId)).leads[0];
+    expect(lead?.fullName.toLowerCase()).toContain("priya");
+    expect(lead?.company).toBe("");
   });
 });

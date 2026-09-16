@@ -1,0 +1,34 @@
+---
+description: List every design/approach option and wait for Drew to approve before building
+alwaysApply: true
+---
+
+# Design approval
+
+For any design, UX, IA, architecture, product-approach, or “how should we…” change: **do not implement first**.
+
+## Before you build
+
+1. List **2–4 distinct approaches** (not tiny variants of one idea).
+2. For each approach, state:
+   - What it is
+   - What the user sees / what changes in the loop
+   - What it explicitly does **not** do
+3. Mark one as **Recommended** and say why in one sentence. Recommend on product fit (what the loop should be), not on how long or how many files it takes to build. **Build cost is not a factor.** Do not list files, time, or “cost: high/medium/low.”
+4. Stop. Wait for Drew to pick (e.g. “go with 2”) or reject.
+
+Skip this only for mechanical work he already specified (typo, deploy, exact copy, “just commit”). If the request can be read two ways, list the ways.
+
+## After he approves
+
+Implement **only** the approved approach. Do not sneak in extras from the rejected options.
+
+## When you are done
+
+Tell him:
+
+- Which approved approach shipped
+- What you did not do
+- Where to look on https://simplesequence-three.vercel.app
+
+Do not ask him to pick among options you already started coding.

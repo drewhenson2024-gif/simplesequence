@@ -2,101 +2,97 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
-
-type Qualification = { decision?: string; explanation?: string; score?: number; reason?: string };
+import { AppShell, BackLink } from "@/components/AppShell";
 
 type Lead = {
   id: string;
   fullName: string;
-  company: string;
-  title: string;
-  email: string | null;
-  linkedinUrlNormalized: string | null;
+  company?: string;
+  title?: string;
   openingLine?: string;
-  publicUrl?: string | null;
-  customJson?: string;
+  linkedinUrlNormalized: string | null;
+  linkedinUrl?: string | null;
 };
-
-function customOf(lead: Lead): Record<string, unknown> {
-  try {
-    return JSON.parse(lead.customJson || "{}") as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-function qualificationOf(lead: Lead): Qualification {
-  const custom = customOf(lead);
-  return (custom.qualification as Qualification) ?? {};
-}
-
-function sourceOf(lead: Lead): string {
-  const custom = customOf(lead);
-  const source = typeof custom.custom_source === "string" ? custom.custom_source : "import";
-  if (source === "stub_catalog") return "—";
-  return source;
-}
-
-function scoreOf(lead: Lead): number | null {
-  const custom = customOf(lead);
-  const q = qualificationOf(lead);
-  if (typeof custom.score === "number") return custom.score;
-  if (typeof q.score === "number") return q.score;
-  return null;
-}
 
 export default function ListDetailPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<{ name: string; leads: Lead[] } | null>(null);
-  const [criteria, setCriteria] = useState("Current technical role at US headquarters");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportResult, setExportResult] = useState<string | null>(null);
 
   async function refresh() {
     const res = await fetch(`/api/lists/${params.id}`);
-    setData(await res.json());
+    const body = await res.json();
+    setData(body);
+    if (body?.name) setName(body.name);
   }
 
   useEffect(() => {
     void refresh();
   }, [params.id]);
 
-  async function research() {
-    setBusy("research");
+  async function saveName() {
+    setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/lists/${params.id}/research`, { method: "POST" });
-      if (!res.ok) throw new Error((await res.json()).error ?? "research failed");
-      await refresh();
+      const res = await fetch(`/api/lists/${params.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not rename");
+      setData(body);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "research failed");
+      setError(err instanceof Error ? err.message : "Could not rename");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
-  async function qualify() {
-    setBusy("qualify");
+  async function removeLead(leadId: string) {
+    if (!data || removingId) return;
+    setError(null);
+    const previous = data;
+    setData({ ...data, leads: data.leads.filter((lead) => lead.id !== leadId) });
+    setRemovingId(leadId);
+    try {
+      const res = await fetch(`/api/lists/${params.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ removeLeadId: leadId }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not remove");
+      setData(body);
+    } catch (err) {
+      setData(previous);
+      setError(err instanceof Error ? err.message : "Could not remove");
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  async function deleteThis() {
+    if (!window.confirm("Delete this list? People already in a sequence stay there.")) return;
+    setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/lists/${params.id}/qualify`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ criteria }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? "qualify failed");
-      await refresh();
+      const res = await fetch(`/api/lists/${params.id}`, { method: "DELETE" });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not delete");
+      window.location.href = "/lists";
     } catch (err) {
-      setError(err instanceof Error ? err.message : "qualify failed");
-    } finally {
-      setBusy(null);
+      setError(err instanceof Error ? err.message : "Could not delete");
+      setBusy(false);
     }
   }
 
   async function exportCrm() {
-    setBusy("export");
+    setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/lists/${params.id}/export`, { method: "POST" });
@@ -106,7 +102,7 @@ export default function ListDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "export failed");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   }
 
@@ -120,80 +116,79 @@ export default function ListDetailPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">{data.name}</h1>
+      <BackLink href="/lists" label="People" />
+      <input
+        aria-label="List name"
+        className="mt-3 w-full min-w-0 rounded border border-(--line) bg-(--input) px-3 py-2 text-3xl leading-normal"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy || !name.trim() || name.trim() === data.name}
+          onClick={() => void saveName()}
+          className="btn-primary rounded-md px-4 py-2 disabled:opacity-40"
+        >
+          Save name
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void deleteThis()}
+          className="btn-danger rounded-md px-4 py-2 disabled:opacity-40"
+        >
+          Delete list
+        </button>
+      </div>
       <p className="mt-2 text-sm text-(--muted)">
-        Research fills an opening line and public URL. Qualify stores fit / maybe / no plus a numeric
-        score. Export writes a CRM-ready payload — it does not send messages.
+        LinkedIn profile URLs. Name, title, and company come from the LinkedIn profile. Export does
+        not send messages.
       </p>
-      <div className="mt-4 flex flex-wrap items-end gap-3">
-        <button
-          type="button"
-          onClick={() => void research()}
-          disabled={busy !== null}
-          className="rounded-md bg-(--ink) px-4 py-2 text-(--panel)"
-        >
-          {busy === "research" ? "Researching…" : "Research"}
-        </button>
-        <label className="text-sm text-(--muted)">
-          Criteria
-          <input
-            className="ml-2 w-80 max-w-full rounded border border-(--line) bg-(--input) px-3 py-2"
-            value={criteria}
-            onChange={(e) => setCriteria(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void qualify()}
-          disabled={busy !== null}
-          className="rounded-md border border-(--line) px-4 py-2"
-        >
-          {busy === "qualify" ? "Scoring…" : "Score / qualify"}
-        </button>
+      <div className="mt-4">
         <button
           type="button"
           onClick={() => void exportCrm()}
-          disabled={busy !== null}
+          disabled={busy}
           className="rounded-md border border-(--line) px-4 py-2"
         >
-          {busy === "export" ? "Exporting…" : "Export to CRM"}
+          {busy ? "Exporting…" : "Export to CRM"}
         </button>
       </div>
       {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
       {exportResult ? <p className="mt-3 text-sm text-(--muted)">{exportResult}</p> : null}
       <div className="mt-6 overflow-x-auto">
-        <table className="w-full min-w-[72rem] text-left text-sm">
+        <table className="w-full text-left text-sm">
           <thead>
             <tr className="border-b border-(--line) text-(--muted)">
               <th className="py-2 pr-4">Name</th>
-              <th className="pr-4">Company</th>
               <th className="pr-4">Title</th>
-              <th className="pr-4">Source</th>
-              <th className="pr-4">Score</th>
-              <th className="pr-4">Opener</th>
-              <th className="pr-4">Public URL</th>
-              <th className="pr-4">Fit</th>
-              <th>Why</th>
+              <th className="pr-4">Company</th>
+              <th className="pr-4">LinkedIn</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            {data.leads.map((lead) => {
-              const q = qualificationOf(lead);
-              const score = scoreOf(lead);
-              return (
-                <tr key={lead.id} className="border-b border-(--line)">
-                  <td className="py-2 pr-4">{lead.fullName}</td>
-                  <td className="pr-4">{lead.company}</td>
-                  <td className="pr-4">{lead.title}</td>
-                  <td className="pr-4">{sourceOf(lead)}</td>
-                  <td className="pr-4">{score ?? "—"}</td>
-                  <td className="max-w-48 truncate pr-4">{lead.openingLine}</td>
-                  <td className="max-w-48 truncate pr-4">{lead.publicUrl}</td>
-                  <td className="pr-4">{q.decision ?? "—"}</td>
-                  <td className="max-w-64 truncate">{q.reason ?? q.explanation ?? ""}</td>
-                </tr>
-              );
-            })}
+            {data.leads.map((lead) => (
+              <tr key={lead.id} className="border-b border-(--line)">
+                <td className="py-2 pr-4">{lead.fullName || "—"}</td>
+                <td className="pr-4">{lead.title || "—"}</td>
+                <td className="pr-4">{lead.company || "—"}</td>
+                <td className="truncate pr-4">
+                  {lead.linkedinUrlNormalized ?? lead.linkedinUrl ?? "—"}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    disabled={removingId === lead.id}
+                    className="text-sm text-(--muted) underline disabled:opacity-40"
+                    onClick={() => void removeLead(lead.id)}
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

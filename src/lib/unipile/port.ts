@@ -12,13 +12,6 @@ export type UnipileMessageInput = {
   imageUrl?: string | null;
 };
 
-export type UnipileEmailInput = {
-  accountId: string;
-  to: string;
-  subject: string;
-  body: string;
-};
-
 export type UnipileSendResult = {
   providerId: string;
   dryRun: boolean;
@@ -33,22 +26,26 @@ export type UnipileAccount = {
   connection_params?: { mail?: string; im?: string };
 };
 
-export function channelFromUnipileAccount(account: UnipileAccount): "linkedin" | "email" | null {
+export function channelFromUnipileAccount(account: UnipileAccount): "linkedin" | null {
   const blob = [account.type, account.provider, ...(account.sources ?? [])].filter(Boolean).join(" ").toUpperCase();
   if (blob.includes("LINKEDIN")) return "linkedin";
-  if (/(GOOGLE|OUTLOOK|MAIL|IMAP|GMAIL|MICROSOFT)/.test(blob)) return "email";
   return null;
 }
 
 export type UnipilePort = {
-  hostedAuthUrl(channel: "linkedin" | "email"): Promise<string>;
+  hostedAuthUrl(channel: "linkedin"): Promise<string>;
   invite(input: UnipileInviteInput): Promise<UnipileSendResult>;
   message(input: UnipileMessageInput): Promise<UnipileSendResult>;
-  sendEmail(input: UnipileEmailInput): Promise<UnipileSendResult>;
   listAccounts?(): Promise<UnipileAccount[]>;
   lookupProfile?(input: { profileUrl: string; accountId?: string }): Promise<{
+    firstName?: string;
+    lastName?: string;
     name?: string;
     headline?: string;
+    title?: string;
+    company?: string;
+    location?: string;
+    about?: string;
     profileUrl?: string;
   }>;
 };
@@ -56,7 +53,7 @@ export type UnipilePort = {
 export class MockUnipile implements UnipilePort {
   readonly calls: Array<{ kind: string; input: unknown }> = [];
 
-  async hostedAuthUrl(channel: "linkedin" | "email"): Promise<string> {
+  async hostedAuthUrl(channel: "linkedin"): Promise<string> {
     return `https://unipile.example/hosted-auth?channel=${channel}&sandbox=1`;
   }
 
@@ -70,19 +67,39 @@ export class MockUnipile implements UnipilePort {
     return { providerId: `mock_msg_${this.calls.length}`, dryRun: true };
   }
 
-  async sendEmail(input: UnipileEmailInput): Promise<UnipileSendResult> {
-    this.calls.push({ kind: "email", input });
-    return { providerId: `mock_email_${this.calls.length}`, dryRun: true };
-  }
-
   async listAccounts(): Promise<UnipileAccount[]> {
     return [];
   }
 
-  async lookupProfile(input: { profileUrl: string }): Promise<{ name?: string; headline?: string; profileUrl?: string }> {
+  async lookupProfile(input: { profileUrl: string }): Promise<{
+    firstName?: string;
+    lastName?: string;
+    name?: string;
+    headline?: string;
+    title?: string;
+    company?: string;
+    location?: string;
+    about?: string;
+    profileUrl?: string;
+  }> {
     this.calls.push({ kind: "lookup", input });
-    const slug = input.profileUrl.split("/").filter(Boolean).pop() ?? "profile";
-    return { name: slug.replace(/-/g, " "), headline: `Operator · ${slug}`, profileUrl: input.profileUrl };
+    const slug = input.profileUrl.split("/").filter(Boolean).pop()?.replace(/\?.*$/, "") ?? "profile";
+    const parts = slug.split("-").filter((p) => p && !/^\d+$/.test(p));
+    const titled = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase());
+    const firstName = titled[0] ?? "Person";
+    const lastName = titled.slice(1).join(" ");
+    const name = [firstName, lastName].filter(Boolean).join(" ");
+    return {
+      firstName,
+      lastName,
+      name,
+      headline: `Operator at Example`,
+      title: "Operator",
+      company: "Example",
+      location: "Example City",
+      about: "Builds sequences for operators.",
+      profileUrl: input.profileUrl,
+    };
   }
 }
 
@@ -145,14 +162,13 @@ export class LiveUnipile implements UnipilePort {
     return body;
   }
 
-  async hostedAuthUrl(channel: "linkedin" | "email"): Promise<string> {
+  async hostedAuthUrl(channel: "linkedin"): Promise<string> {
     const expires = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    const providers = channel === "linkedin" ? ["LINKEDIN"] : ["GOOGLE", "OUTLOOK"];
     const body = (await this.request("/api/v1/hosted/accounts/link", {
       method: "POST",
       body: JSON.stringify({
         type: "create",
-        providers,
+        providers: ["LINKEDIN"],
         api_url: this.base(),
         expiresOn: expires,
         success_redirect_url: `${this.opts.appUrl}/settings?connected=${channel}`,
@@ -171,22 +187,70 @@ export class LiveUnipile implements UnipilePort {
   }
 
   async lookupProfile(input: { profileUrl: string; accountId?: string }): Promise<{
+    firstName?: string;
+    lastName?: string;
     name?: string;
     headline?: string;
+    title?: string;
+    company?: string;
+    location?: string;
+    about?: string;
     profileUrl?: string;
   }> {
     const slug = this.slugFromProfileUrl(input.profileUrl);
-    const q = input.accountId ? `?account_id=${encodeURIComponent(input.accountId)}` : "";
-    const profile = (await this.request(`/api/v1/users/${encodeURIComponent(slug)}${q}`)) as {
-      name?: string;
-      headline?: string;
-      public_profile_url?: string;
-    };
+    const profile = await this.fetchUserProfile(slug, input.accountId);
+    const jobs = profile.work_experience ?? [];
+    const current = jobs.find((job) => job.current || job.end == null) ?? jobs[0];
+    const company = typeof current?.company === "string" ? current.company : current?.company?.text;
+    const title =
+      current?.position ||
+      (typeof current?.job_title === "string" ? current.job_title : current?.job_title?.text);
     return {
-      name: profile.name,
+      firstName: profile.first_name,
+      lastName: profile.last_name,
+      name: profile.name || [profile.first_name, profile.last_name].filter(Boolean).join(" "),
       headline: profile.headline,
+      title,
+      company,
+      location: profile.location,
+      about: profile.summary,
       profileUrl: profile.public_profile_url ?? input.profileUrl,
     };
+  }
+
+  private async fetchUserProfile(
+    slug: string,
+    accountId?: string,
+  ): Promise<{
+    first_name?: string;
+    last_name?: string;
+    name?: string;
+    headline?: string;
+    location?: string;
+    summary?: string;
+    public_profile_url?: string;
+    work_experience?: Array<{
+      position?: string;
+      company?: string | { text?: string };
+      job_title?: string | { text?: string };
+      current?: boolean;
+      end?: string | null;
+    }>;
+  }> {
+    const withAccount = (extra: Record<string, string>) => {
+      const params = new URLSearchParams(extra);
+      if (accountId) params.set("account_id", accountId);
+      return params.toString();
+    };
+    try {
+      return (await this.request(
+        `/api/v1/users/${encodeURIComponent(slug)}?${withAccount({ linkedin_sections: "experience" })}`,
+      )) as Awaited<ReturnType<LiveUnipile["fetchUserProfile"]>>;
+    } catch {
+      return (await this.request(
+        `/api/v1/users/${encodeURIComponent(slug)}?${withAccount({})}`,
+      )) as Awaited<ReturnType<LiveUnipile["fetchUserProfile"]>>;
+    }
   }
 
   private slugFromProfileUrl(profileUrl: string): string {
@@ -250,21 +314,5 @@ export class LiveUnipile implements UnipilePort {
     if (!res.ok) throw new Error(`Unipile ${res.status} /api/v1/chats: ${text.slice(0, 400)}`);
     const parsed = text ? (JSON.parse(text) as { id?: string; chat_id?: string }) : {};
     return { providerId: parsed.id ?? parsed.chat_id ?? providerId, dryRun: false };
-  }
-
-  async sendEmail(input: UnipileEmailInput): Promise<UnipileSendResult> {
-    if (!this.opts.sendEnabled) {
-      return { providerId: `dry_email_${Date.now()}`, dryRun: true };
-    }
-    const body = (await this.request("/api/v1/emails", {
-      method: "POST",
-      body: JSON.stringify({
-        account_id: input.accountId,
-        subject: input.subject,
-        body: input.body,
-        to: [{ identifier: input.to }],
-      }),
-    })) as { id?: string; tracking_id?: string };
-    return { providerId: body.id ?? body.tracking_id ?? `email_${Date.now()}`, dryRun: false };
   }
 }

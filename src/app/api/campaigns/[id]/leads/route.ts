@@ -6,6 +6,7 @@ import { withCommand } from "@/lib/http/respond";
 const schema = z.object({
   listId: z.string().optional(),
   content: z.string().optional(),
+  urls: z.array(z.string()).optional(),
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
