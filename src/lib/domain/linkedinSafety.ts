@@ -1,6 +1,22 @@
 /** Conservative Unipile/LinkedIn invite pace for a standard account. Not a guarantee against restriction. */
 export const LINKEDIN_INVITE_DAILY_CAP = 25;
 
+export const PROVIDER_THROTTLE = "provider_throttle";
+export const PROVIDER_RESTRICTION = "provider_restriction";
+
+export type LinkedInProviderSignal = "quota" | "throttle" | "restrict";
+
+/** Classify Unipile/LinkedIn send errors. Hard restrict language wins over a 429. */
+export function classifyLinkedInProviderError(message: string): LinkedInProviderSignal | null {
+  const text = message.toLowerCase();
+  if (/captcha|checkpoint|temporarily blocked/.test(text)) return "restrict";
+  if (/restrict/.test(text) && !/cannot_resend_yet/.test(text)) return "restrict";
+  if (/cannot_resend_yet/.test(text)) return "quota";
+  if (/\b422\b/.test(text) && /invite|invitation|resend|relation/.test(text)) return "quota";
+  if (/429|too_many_requests|rate.?limit|too many|limit exceeded/.test(text)) return "throttle";
+  return null;
+}
+
 export function calendarDay(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,

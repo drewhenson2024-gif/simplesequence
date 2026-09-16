@@ -11,6 +11,8 @@ type TrialRow = {
   at: string;
   sent: boolean;
   restricted: boolean;
+  throttled: boolean;
+  quota: boolean;
   dryRun: boolean;
   error: string | null;
 };
@@ -79,12 +81,14 @@ export default function TrialsPage() {
         at: new Date().toISOString(),
         sent: Boolean(row.sent),
         restricted: Boolean(row.restricted),
+        throttled: Boolean(row.throttled),
+        quota: Boolean(row.quota),
         dryRun: Boolean(row.dryRun),
         error: row.error ?? null,
       },
       ...current,
     ]);
-    if (row.restricted) {
+    if (row.restricted || row.throttled || row.quota) {
       stop();
       return;
     }
@@ -115,15 +119,17 @@ export default function TrialsPage() {
   }
 
   const sent = log.filter((row) => row.sent).length;
-  const failed = log.filter((row) => !row.sent && !row.restricted).length;
+  const failed = log.filter((row) => !row.sent && !row.restricted && !row.throttled && !row.quota).length;
   const hitRestrict = log.some((row) => row.restricted) || restricted;
+  const hitThrottle = log.some((row) => row.throttled);
+  const hitQuota = log.some((row) => row.quota);
 
   return (
     <AppShell>
       <h1 className="text-3xl">Developer trial</h1>
       <p className="mt-2 max-w-2xl text-(--muted)">
-        Fire real LinkedIn actions at a set pace and stop if the account is restricted. This does
-        not create LinkedIn accounts. Connect the next one in Settings yourself.
+        Fire real LinkedIn actions at a set pace and stop on invite limit, throttle, or restrict.
+        This does not create LinkedIn accounts. Connect the next one in Settings yourself.
       </p>
       {sandbox ? (
         <p className="mt-3 rounded border border-(--line) bg-(--panel) px-3 py-2 text-sm">
@@ -139,6 +145,14 @@ export default function TrialsPage() {
           </Link>
           .
         </p>
+      ) : null}
+      {hitThrottle && !hitRestrict ? (
+        <p className="mt-3 text-sm text-(--ochre)">
+          Stopped — LinkedIn asked us to wait. Resume a sequence after you check LinkedIn.
+        </p>
+      ) : null}
+      {hitQuota && !hitRestrict && !hitThrottle ? (
+        <p className="mt-3 text-sm">Invite limit — this one waits.</p>
       ) : null}
       {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
 
@@ -208,8 +222,10 @@ export default function TrialsPage() {
       </div>
 
       <div className="mt-6 flex flex-wrap gap-4 text-sm">
-        <StatusBadge tone={running ? "wait" : hitRestrict ? "danger" : "muted"}>
-          {running ? "running" : hitRestrict ? "restricted" : "idle"}
+        <StatusBadge
+          tone={running ? "wait" : hitRestrict ? "danger" : hitThrottle ? "wait" : "muted"}
+        >
+          {running ? "running" : hitRestrict ? "restricted" : hitThrottle ? "stopped" : "idle"}
         </StatusBadge>
         <span>sent {sent}</span>
         <span>failed {failed}</span>
@@ -221,7 +237,17 @@ export default function TrialsPage() {
           <li key={`${row.at}-${index}`} className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm">
             <span className="text-(--muted)">{row.at}</span>
             {" · "}
-            {row.restricted ? "restricted" : row.sent ? (row.dryRun ? "dry-run" : "sent") : "failed"}
+            {row.restricted
+              ? "restricted"
+              : row.throttled
+                ? "stopped"
+                : row.quota
+                  ? "invite limit"
+                  : row.sent
+                    ? row.dryRun
+                      ? "dry-run"
+                      : "sent"
+                    : "failed"}
             {" · "}
             <span className="break-all">{row.url}</span>
             {row.error ? <p className="mt-1 text-(--danger)">{row.error}</p> : null}

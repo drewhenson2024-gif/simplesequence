@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { looksLikeLinkedInRestriction, recordRestriction, runTrialAction, type AppContext } from "@/lib/app/commands";
+import { PROVIDER_THROTTLE } from "@/lib/domain/linkedinSafety";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { senderAccounts } from "@/lib/db/schema";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
@@ -26,6 +27,18 @@ class RestrictUnipile extends MockUnipile {
   }
 }
 
+class ThrottleUnipile extends MockUnipile {
+  async invite(): Promise<never> {
+    throw new Error("Unipile 429 provider/too_many_requests");
+  }
+}
+
+class QuotaUnipile extends MockUnipile {
+  async invite(): Promise<never> {
+    throw new Error("Unipile 422 cannot_resend_yet");
+  }
+}
+
 describe("developer trial", () => {
   it("sends a connection through Unipile and does not open a new account", async () => {
     const { ctx, unipile } = await testApp();
@@ -36,6 +49,8 @@ describe("developer trial", () => {
     expect(result.ok).toBe(true);
     expect(result.sent).toBe(true);
     expect(result.restricted).toBe(false);
+    expect(result.throttled).toBe(false);
+    expect(result.quota).toBe(false);
     expect(result.dryRun).toBe(true);
     expect(unipile.calls.some((c) => c.kind === "invite")).toBe(true);
     const senders = await ctx.db.select().from(senderAccounts);
@@ -76,7 +91,36 @@ describe("developer trial", () => {
 
   it("treats restriction language as a restrict, not a generic 404", async () => {
     expect(looksLikeLinkedInRestriction("Unipile 429 account restricted")).toBe(true);
+    expect(looksLikeLinkedInRestriction("Unipile 429 provider/too_many_requests")).toBe(false);
     expect(looksLikeLinkedInRestriction("Unipile 404 /api/v1/users/foo")).toBe(false);
+  });
+
+  it("marks throttle without restricting the sender", async () => {
+    const { ctx } = await testApp(new ThrottleUnipile());
+    const result = await runTrialAction(ctx, {
+      action: "connection",
+      url: "https://www.linkedin.com/in/priya-rao",
+    });
+    expect(result.throttled).toBe(true);
+    expect(result.restricted).toBe(false);
+    expect(result.sent).toBe(false);
+    const senders = await ctx.db.select().from(senderAccounts);
+    expect(senders[0]?.status).toBe("healthy");
+    expect(senders[0]?.lastError).toBe(PROVIDER_THROTTLE);
+  });
+
+  it("treats invite quota as a wait, not a restrict", async () => {
+    const { ctx } = await testApp(new QuotaUnipile());
+    const result = await runTrialAction(ctx, {
+      action: "connection",
+      url: "https://www.linkedin.com/in/priya-rao",
+    });
+    expect(result.quota).toBe(true);
+    expect(result.restricted).toBe(false);
+    expect(result.throttled).toBe(false);
+    const senders = await ctx.db.select().from(senderAccounts);
+    expect(senders[0]?.status).toBe("healthy");
+    expect(senders[0]?.lastError).toBeNull();
   });
 
   it("already-restricted sender stays stopped", async () => {

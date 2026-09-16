@@ -13,6 +13,7 @@ import {
   peopleCatalog,
   recordReply,
   recordRestriction,
+  resumeCampaign,
   replyToLead,
   startCampaign,
   stopLead,
@@ -20,18 +21,28 @@ import {
   type AppContext,
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
-import { sendJobs, sequenceSteps } from "@/lib/db/schema";
+import { sendJobs, senderAccounts, sequenceSteps } from "@/lib/db/schema";
 import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { MockUnipile } from "@/lib/unipile/port";
 
 const fixture = (name: string) => readFileSync(path.join(process.cwd(), "fixtures", name), "utf8");
 
-async function testApp() {
+class ScriptedUnipile extends MockUnipile {
+  constructor(private readonly inviteErrors: Array<Error | null>) {
+    super();
+  }
+  async invite(input: Parameters<MockUnipile["invite"]>[0]) {
+    const next = this.inviteErrors.shift();
+    if (next) throw next;
+    return super.invite(input);
+  }
+}
+
+async function testApp(unipile: MockUnipile = new MockUnipile()) {
   const app = createAppDb(":memory:");
   await migrate(app.client);
   await seedWorkspace(app.db);
-  const unipile = new MockUnipile();
   let now = new Date("2026-09-14T17:00:00.000Z");
   const ctx: AppContext = {
     db: app.db,
@@ -195,6 +206,87 @@ describe("commands", () => {
     const { getCampaign } = await import("@/lib/app/commands");
     const after = await getCampaign(ctx, campaign.id);
     expect(after.status).toBe("restricted");
+  });
+
+  it("defers an invite quota without stopping the sequence", async () => {
+    const { ctx, unipile, advance } = await testApp(
+      new ScriptedUnipile([new Error("Unipile 422 cannot_resend_yet"), null]),
+    );
+    const list = await importLeads(ctx, {
+      listName: "quota",
+      content: "name,linkedin_url\nPat,https://www.linkedin.com/in/pat-lee\n",
+    });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx, { ignoreWorkingHours: true });
+    const paused = await getCampaign(ctx, campaign.id);
+    expect(paused.status).toBe("running");
+    expect(paused.senderSignal).toBeNull();
+    const parked = paused.jobs.find((j) => j.action === "connection");
+    expect(parked?.status).toBe("pending");
+    expect(parked?.skipReason).toBe("invite limit");
+    const senders = await ctx.db.select().from(senderAccounts);
+    expect(senders[0]?.status).toBe("healthy");
+    expect(senders[0]?.lastError).toBeNull();
+    advance(25 * 60 * 60 * 1000);
+    await tick(ctx, { ignoreWorkingHours: true });
+    const after = await getCampaign(ctx, campaign.id);
+    expect(after.status).toBe("running");
+    expect(after.jobs.find((j) => j.action === "connection")?.status).toBe("sent");
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(1);
+  });
+
+  it("pauses on throttle and resumes after a human Start", async () => {
+    const { ctx, unipile, advance } = await testApp(
+      new ScriptedUnipile([new Error("Unipile 429 provider/too_many_requests"), null]),
+    );
+    const list = await importLeads(ctx, {
+      listName: "throttle",
+      content: "name,linkedin_url\nPat,https://www.linkedin.com/in/pat-lee\n",
+    });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx, { ignoreWorkingHours: true });
+    const stopped = await getCampaign(ctx, campaign.id);
+    expect(stopped.status).toBe("paused");
+    expect(stopped.senderSignal).toBe("throttled");
+    const senders = await ctx.db.select().from(senderAccounts);
+    expect(senders[0]?.status).toBe("healthy");
+    expect(senders[0]?.lastError).toBe("provider_throttle");
+    const idle = await tick(ctx, { ignoreWorkingHours: true });
+    expect(idle.processed).toBe(0);
+    await resumeCampaign(ctx, campaign.id);
+    const resumed = await getCampaign(ctx, campaign.id);
+    expect(resumed.status).toBe("running");
+    expect(resumed.senderSignal).toBeNull();
+    await tick(ctx, { ignoreWorkingHours: true });
+    const after = await getCampaign(ctx, campaign.id);
+    expect(after.jobs.find((j) => j.action === "connection")?.status).toBe("sent");
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(1);
+  });
+
+  it("hard restrict from a send still opens the circuit", async () => {
+    const { ctx, advance } = await testApp(
+      new ScriptedUnipile([new Error("Unipile 429 /api/v1/users/invite: account restricted")]),
+    );
+    const list = await importLeads(ctx, {
+      listName: "restrict",
+      content: "name,linkedin_url\nPat,https://www.linkedin.com/in/pat-lee\n",
+    });
+    const campaign = await createCampaign(ctx, { name: "LI", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx, { ignoreWorkingHours: true });
+    const after = await getCampaign(ctx, campaign.id);
+    expect(after.status).toBe("restricted");
+    expect(after.senderSignal).toBe("restricted");
+    const senders = await ctx.db.select().from(senderAccounts);
+    expect(senders[0]?.status).toBe("restricted");
   });
 
   it("rejects email steps", async () => {

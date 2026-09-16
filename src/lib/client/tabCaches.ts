@@ -105,6 +105,7 @@ export type AnalyticsBoard = {
     replies: number;
     replyRate: number;
     restricted: boolean;
+    throttled?: boolean;
     lastActivity: string | null;
     steps: Array<{
       stepIndex: number;
@@ -131,6 +132,7 @@ export type SettingsSnapshot = {
     status: string;
     displayName: string;
     unipileAccountId?: string | null;
+    lastError?: string | null;
   }>;
   workspace?: {
     timezone: string;

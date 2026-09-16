@@ -28,7 +28,13 @@ import {
   type SenderStatus,
 } from "../domain/fsm";
 import { addJitter, inWorkingHours, nextWorkingSlot, type WorkingHours } from "../domain/jitter";
-import { calendarDay, LINKEDIN_INVITE_DAILY_CAP } from "../domain/linkedinSafety";
+import {
+  calendarDay,
+  classifyLinkedInProviderError,
+  LINKEDIN_INVITE_DAILY_CAP,
+  PROVIDER_RESTRICTION,
+  PROVIDER_THROTTLE,
+} from "../domain/linkedinSafety";
 import {
   renderTemplate,
   stepsForTemplate,
@@ -628,8 +634,22 @@ export async function getCampaign(ctx: AppContext, campaignId: string) {
       lead: enrollment ? byId.get(enrollment.leadId) ?? null : null,
     };
   });
+  const [sender] = campaign.linkedinSenderId
+    ? await ctx.db
+        .select()
+        .from(tables.senderAccounts)
+        .where(eq(tables.senderAccounts.id, campaign.linkedinSenderId))
+        .limit(1)
+    : [];
+  const senderSignal =
+    sender?.status === "restricted"
+      ? ("restricted" as const)
+      : sender?.lastError === PROVIDER_THROTTLE
+        ? ("throttled" as const)
+        : null;
   return {
     ...campaign,
+    senderSignal,
     steps,
     enrollments: enrollments.map((e) => ({ ...e, lead: byId.get(e.leadId) ?? null })),
     enrollmentCounts: counts,
@@ -683,6 +703,7 @@ export type AnalyticsRun = {
   replies: number;
   replyRate: number;
   restricted: boolean;
+  throttled: boolean;
   lastActivity: string | null;
   steps: AnalyticsStep[];
   insights: string[];
@@ -733,6 +754,9 @@ function insightsForRun(run: Omit<AnalyticsRun, "insights">): string[] {
   if (run.restricted) {
     lines.push("This run is restricted. New sends will not go out until the sender is healthy.");
   }
+  if (run.throttled) {
+    lines.push("Stopped — LinkedIn asked us to wait. Resume after you check LinkedIn.");
+  }
   return lines;
 }
 
@@ -742,13 +766,17 @@ export async function workspaceAnalytics(ctx: AppContext): Promise<WorkspaceAnal
     .from(tables.campaigns)
     .where(eq(tables.campaigns.workspaceId, ctx.workspaceId));
   const ids = campaigns.map((c) => c.id);
-  const [enrollments, jobs, steps] =
+  const [enrollments, jobs, steps, senders] =
     ids.length === 0
-      ? [[], [], []]
+      ? [[], [], [], []]
       : await Promise.all([
           ctx.db.select().from(tables.enrollments).where(inArray(tables.enrollments.campaignId, ids)),
           ctx.db.select().from(tables.sendJobs).where(inArray(tables.sendJobs.campaignId, ids)),
           ctx.db.select().from(tables.sequenceSteps).where(inArray(tables.sequenceSteps.campaignId, ids)),
+          ctx.db
+            .select()
+            .from(tables.senderAccounts)
+            .where(eq(tables.senderAccounts.workspaceId, ctx.workspaceId)),
         ]);
 
   const enrollByCampaign = new Map<string, typeof enrollments>();
@@ -823,6 +851,11 @@ export async function workspaceAnalytics(ctx: AppContext): Promise<WorkspaceAnal
       replies,
       replyRate: sent === 0 ? 0 : replies / sent,
       restricted: campaign.status === "restricted",
+      throttled:
+        campaign.status === "paused" &&
+        senders.some(
+          (sender) => sender.id === campaign.linkedinSenderId && sender.lastError === PROVIDER_THROTTLE,
+        ),
       lastActivity: last,
       steps: stepRows,
     };
@@ -880,6 +913,7 @@ export async function startCampaign(ctx: AppContext, campaignId: string) {
     if (needsLi && !liSender) liSender = await ensureSandboxSender(ctx, "linkedin");
   }
   if (needsLi && !liSender) throw new CommandError("LinkedIn sender required", 409);
+  if (liSender) await clearSenderThrottle(ctx, liSender);
 
   await ctx.db
     .update(tables.campaigns)
@@ -1323,6 +1357,52 @@ export async function recordBounce(ctx: AppContext, enrollmentId: string) {
   await audit(ctx, "record_bounce", { enrollmentId });
 }
 
+async function clearSenderThrottle(ctx: AppContext, senderId: string) {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, senderId))
+    .limit(1);
+  if (!sender || sender.lastError !== PROVIDER_THROTTLE) return;
+  await ctx.db
+    .update(tables.senderAccounts)
+    .set({ lastError: null })
+    .where(eq(tables.senderAccounts.id, senderId));
+  await audit(ctx, "sender_throttle_cleared", { senderId });
+}
+
+export async function recordThrottle(ctx: AppContext, senderId: string) {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, senderId))
+    .limit(1);
+  if (!sender) throw new CommandError("sender not found", 404);
+  if (sender.status === "restricted") return;
+  await ctx.db
+    .update(tables.senderAccounts)
+    .set({ lastError: PROVIDER_THROTTLE })
+    .where(eq(tables.senderAccounts.id, senderId));
+  const campaigns = await ctx.db
+    .select()
+    .from(tables.campaigns)
+    .where(
+      and(
+        eq(tables.campaigns.workspaceId, ctx.workspaceId),
+        eq(tables.campaigns.linkedinSenderId, senderId),
+      ),
+    );
+  for (const campaign of campaigns) {
+    if (campaign.status === "running") {
+      await ctx.db
+        .update(tables.campaigns)
+        .set({ status: transitionCampaign(campaign.status as CampaignStatus, "paused") })
+        .where(eq(tables.campaigns.id, campaign.id));
+    }
+  }
+  await audit(ctx, "sender_throttled", { senderId });
+}
+
 export async function recordRestriction(ctx: AppContext, senderId: string) {
   const [sender] = await ctx.db
     .select()
@@ -1334,7 +1414,7 @@ export async function recordRestriction(ctx: AppContext, senderId: string) {
     .update(tables.senderAccounts)
     .set({
       status: transitionSender(sender.status as SenderStatus, "restricted"),
-      lastError: "provider_restriction",
+      lastError: PROVIDER_RESTRICTION,
     })
     .where(eq(tables.senderAccounts.id, senderId));
   const campaigns = await ctx.db
@@ -1498,7 +1578,7 @@ export async function tick(ctx: AppContext, opts?: { ignoreWorkingHours?: boolea
       .from(tables.senderAccounts)
       .where(eq(tables.senderAccounts.id, job.senderId))
       .limit(1);
-    if (!sender || sender.status !== "healthy") continue;
+    if (!sender || sender.status !== "healthy" || sender.lastError === PROVIDER_THROTTLE) continue;
     const [campaign] = await ctx.db
       .select()
       .from(tables.campaigns)
@@ -1516,6 +1596,36 @@ export async function tick(ctx: AppContext, opts?: { ignoreWorkingHours?: boolea
     processed += 1;
   }
   return { processed };
+}
+
+async function parkJob(
+  ctx: AppContext,
+  jobId: string,
+  enrollmentId: string,
+  dueAt: Date,
+  error: string | null,
+) {
+  await ctx.db
+    .update(tables.sendJobs)
+    .set({
+      status: transitionJob("in_progress", "pending"),
+      dueAt: iso(dueAt),
+      claimedAt: null,
+      claimedBy: null,
+      error,
+    })
+    .where(eq(tables.sendJobs.id, jobId));
+  const [enrollment] = await ctx.db
+    .select()
+    .from(tables.enrollments)
+    .where(eq(tables.enrollments.id, enrollmentId))
+    .limit(1);
+  if (enrollment?.status === "in_progress") {
+    await ctx.db
+      .update(tables.enrollments)
+      .set({ status: transitionEnrollment("in_progress", "waiting"), updatedAt: iso(ctx.clock.now()) })
+      .where(eq(tables.enrollments.id, enrollmentId));
+  }
 }
 
 async function executeJob(ctx: AppContext, jobId: string) {
@@ -1617,28 +1727,61 @@ async function executeJob(ctx: AppContext, jobId: string) {
   const subject = step.subjectTemplate ? renderTemplate(step.subjectTemplate, fields) : null;
   const accountId = sender?.unipileAccountId ?? "mock";
   let result;
-  if (step.action === "connection") {
-    if (!fields.linkedinUrl) {
-      await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "no linkedin url");
+  try {
+    if (step.action === "connection") {
+      if (!fields.linkedinUrl) {
+        await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "no linkedin url");
+        return;
+      }
+      result = await ctx.unipile.invite({
+        accountId,
+        profileUrl: fields.linkedinUrl,
+        body,
+        imageUrl: step.imageUrl,
+      });
+    } else {
+      if (!fields.linkedinUrl) {
+        await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "no linkedin url");
+        return;
+      }
+      result = await ctx.unipile.message({
+        accountId,
+        profileUrl: fields.linkedinUrl,
+        body,
+        imageUrl: step.imageUrl,
+      });
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "send failed";
+    const signal = classifyLinkedInProviderError(message);
+    if (signal === "quota") {
+      const ws = await getWorkspace(ctx);
+      const due = nextWorkingSlot(new Date(ctx.clock.now().getTime() + 24 * 60 * 60 * 1000), hoursOf(ws));
+      await parkJob(ctx, jobId, enrollment.id, due, "invite limit");
+      await audit(ctx, "invite_quota", { jobId, senderId: job.senderId });
       return;
     }
-    result = await ctx.unipile.invite({
-      accountId,
-      profileUrl: fields.linkedinUrl,
-      body,
-      imageUrl: step.imageUrl,
-    });
-  } else {
-    if (!fields.linkedinUrl) {
-      await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "no linkedin url");
+    if (signal === "throttle") {
+      await parkJob(ctx, jobId, enrollment.id, ctx.clock.now(), null);
+      await recordThrottle(ctx, job.senderId);
       return;
     }
-    result = await ctx.unipile.message({
-      accountId,
-      profileUrl: fields.linkedinUrl,
-      body,
-      imageUrl: step.imageUrl,
-    });
+    if (signal === "restrict") {
+      await ctx.db
+        .update(tables.sendJobs)
+        .set({ status: transitionJob("in_progress", "failed"), error: message })
+        .where(eq(tables.sendJobs.id, jobId));
+      if (enrollment.status === "in_progress") {
+        await ctx.db
+          .update(tables.enrollments)
+          .set({ status: transitionEnrollment("in_progress", "failed"), updatedAt: iso(ctx.clock.now()) })
+          .where(eq(tables.enrollments.id, enrollment.id));
+      }
+      await recordRestriction(ctx, job.senderId);
+      return;
+    }
+    await finishJob(ctx, jobId, enrollment.id, steps, job, "failed", message);
+    return;
   }
 
   await ctx.db.insert(tables.messages).values({
@@ -1657,6 +1800,7 @@ async function executeJob(ctx: AppContext, jobId: string) {
       status: transitionJob("in_progress", "sent"),
       providerId: result.providerId,
       dryRun: result.dryRun ? 1 : job.dryRun,
+      error: null,
     })
     .where(eq(tables.sendJobs.id, jobId));
   await outbox(ctx, "job_sent", { jobId, providerId: result.providerId });
@@ -1913,10 +2057,10 @@ export async function applyLearnings(ctx: AppContext, campaignId: string) {
   return { ...created, status: "draft" as const, sourceId: campaignId, started: false, suggestions: learnings.suggestions };
 }
 
+export { classifyLinkedInProviderError };
+
 export function looksLikeLinkedInRestriction(message: string) {
-  return /restrict|rate.?limit|too many|429|checkpoint|captcha|temporarily blocked|limit exceeded|account.*limit/i.test(
-    message,
-  );
+  return classifyLinkedInProviderError(message) === "restrict";
 }
 
 export async function runTrialAction(
@@ -1926,6 +2070,8 @@ export async function runTrialAction(
   ok: boolean;
   sent: boolean;
   restricted: boolean;
+  throttled: boolean;
+  quota: boolean;
   dryRun: boolean;
   error: string | null;
   senderStatus: string;
@@ -1946,11 +2092,14 @@ export async function runTrialAction(
       ok: false,
       sent: false,
       restricted: true,
+      throttled: false,
+      quota: false,
       dryRun: false,
       error: "sender restricted",
       senderStatus: sender.status,
     };
   }
+  if (sender.lastError === PROVIDER_THROTTLE) await clearSenderThrottle(ctx, senderId);
   const accountId = sender.unipileAccountId ?? "mock";
   const body = (input.body ?? "").trim();
   try {
@@ -1963,21 +2112,52 @@ export async function runTrialAction(
       ok: true,
       sent: true,
       restricted: false,
+      throttled: false,
+      quota: false,
       dryRun: Boolean(result.dryRun),
       error: null,
       senderStatus: sender.status,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "send failed";
-    if (looksLikeLinkedInRestriction(message)) {
+    const signal = classifyLinkedInProviderError(message);
+    if (signal === "restrict") {
       await recordRestriction(ctx, senderId);
       return {
         ok: false,
         sent: false,
         restricted: true,
+        throttled: false,
+        quota: false,
         dryRun: false,
         error: message,
         senderStatus: "restricted",
+      };
+    }
+    if (signal === "throttle") {
+      await recordThrottle(ctx, senderId);
+      return {
+        ok: false,
+        sent: false,
+        restricted: false,
+        throttled: true,
+        quota: false,
+        dryRun: false,
+        error: message,
+        senderStatus: sender.status,
+      };
+    }
+    if (signal === "quota") {
+      await audit(ctx, "trial_invite_quota", { url });
+      return {
+        ok: false,
+        sent: false,
+        restricted: false,
+        throttled: false,
+        quota: true,
+        dryRun: false,
+        error: "invite limit",
+        senderStatus: sender.status,
       };
     }
     await audit(ctx, "trial_action_failed", { action: input.action, url, error: message });
@@ -1985,6 +2165,8 @@ export async function runTrialAction(
       ok: false,
       sent: false,
       restricted: false,
+      throttled: false,
+      quota: false,
       dryRun: false,
       error: message,
       senderStatus: sender.status,

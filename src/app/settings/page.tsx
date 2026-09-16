@@ -13,6 +13,7 @@ type Sender = {
   status: string;
   displayName: string;
   unipileAccountId?: string | null;
+  lastError?: string | null;
 };
 
 type Settings = SettingsSnapshot;
@@ -29,6 +30,10 @@ function pickSender(senders: Sender[]): Sender | undefined {
 function accountState(sender: Sender | undefined, liveKeys: boolean) {
   if (!sender) return { tone: "off" as const, label: "Not connected", live: false };
   const mock = !sender.unipileAccountId || sender.unipileAccountId.startsWith("mock_");
+  if (sender.status === "restricted") return { tone: "danger" as const, label: "Restricted", live: false };
+  if (sender.lastError === "provider_throttle") {
+    return { tone: "wait" as const, label: "Stopped — LinkedIn asked us to wait", live: !mock };
+  }
   if (sender.status === "pending") return { tone: "wait" as const, label: "Connecting…", live: false };
   if (sender.status === "healthy" && !mock) return { tone: "ok" as const, label: "Connected", live: true };
   if (sender.status === "healthy" && mock) {
@@ -208,7 +213,7 @@ export default function SettingsPage() {
             Developer trial
           </Link>
           {" — "}
-          fire actions at a pace and stop on restrict. Does not create LinkedIn accounts.
+          fire actions at a pace and stop on throttle or restrict. Does not create LinkedIn accounts.
         </p>
       </section>
 
@@ -240,7 +245,7 @@ function AccountCard({
 }: {
   title: string;
   hint: string;
-  state: { tone: "ok" | "off" | "wait" | "muted"; label: string };
+  state: { tone: "ok" | "off" | "wait" | "danger" | "muted"; label: string };
   name?: string;
   busy: boolean;
   actionLabel: string;

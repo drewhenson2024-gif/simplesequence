@@ -31,6 +31,7 @@ type Campaign = {
   }>;
   enrollmentCounts: Record<string, number>;
   jobCounts: Record<string, number>;
+  senderSignal?: "throttled" | "restricted" | null;
   jobs?: Array<{
     id: string;
     enrollmentId: string;
@@ -73,6 +74,7 @@ function skipLabel(reason: string | null) {
   if (reason === "disabled") return "Step disabled";
   if (reason === "gift removed") return "Gift stage removed";
   if (reason === "email removed") return "Email stage removed";
+  if (reason === "invite limit") return "Invite limit — this one waits";
   return reason;
 }
 
@@ -264,11 +266,27 @@ export default function CampaignDetailPage() {
       <BackLink href="/campaigns" label="Sequences" />
       <p className="mt-3">
         <StatusBadge
-          tone={data.status === "running" ? "ok" : data.status === "paused" ? "wait" : "muted"}
+          tone={
+            data.status === "running"
+              ? "ok"
+              : data.status === "restricted"
+                ? "danger"
+                : data.status === "paused"
+                  ? "wait"
+                  : "muted"
+          }
         >
           {data.status}
         </StatusBadge>
       </p>
+      {data.status === "restricted" || data.senderSignal === "restricted" ? (
+        <p className="mt-3 text-sm text-(--danger)">Restricted. Connect another account in Settings.</p>
+      ) : null}
+      {data.status === "paused" && data.senderSignal === "throttled" ? (
+        <p className="mt-3 text-sm text-(--ochre)">
+          Stopped — LinkedIn asked us to wait. Resume after you check LinkedIn.
+        </p>
+      ) : null}
       {editable ? (
         <input
           className="mt-2 w-full min-w-0 rounded border border-(--line) bg-(--input) px-3 py-2 text-3xl leading-normal"

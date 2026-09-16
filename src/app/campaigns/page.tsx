@@ -82,7 +82,15 @@ export default function CampaignsPage() {
               <span className="font-medium">{c.name}</span>
               <span className="flex shrink-0 items-center gap-3 text-sm text-(--muted)">
                 <StatusBadge
-                  tone={c.status === "running" ? "ok" : c.status === "paused" ? "wait" : "muted"}
+                  tone={
+                    c.status === "running"
+                      ? "ok"
+                      : c.status === "restricted"
+                        ? "danger"
+                        : c.status === "paused"
+                          ? "wait"
+                          : "muted"
+                  }
                 >
                   {c.status}
                 </StatusBadge>
