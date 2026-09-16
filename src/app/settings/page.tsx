@@ -132,8 +132,8 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">Settings</h1>
-      <p className="mt-2 max-w-2xl text-(--muted)">
+      <h1 className="text-2xl tracking-tight">Settings</h1>
+      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
         Connect LinkedIn. Safety switches live here so a sequence never starts sending by surprise.
       </p>
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
@@ -219,7 +219,7 @@ export default function SettingsPage() {
           <div>
             <p className="font-medium">Developer trial</p>
             <p className="mt-1 max-w-lg text-sm text-(--muted)">
-              On = Trial appears in the top nav. Pace LinkedIn actions and keep a history of each
+              On = Trial appears in the sidebar. Pace LinkedIn actions and keep a history of each
               run. Does not create LinkedIn accounts.
             </p>
           </div>

@@ -38,8 +38,8 @@ export default function CampaignsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">Sequences</h1>
-      <p className="mt-2 max-w-2xl text-(--muted)">
+      <h1 className="text-2xl tracking-tight">Sequences</h1>
+      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
         Create a draft, add LinkedIn profile URLs, then Start. Sequences are LinkedIn connection
         plus messages. Stats live on Analytics. Learnings write a new draft only.
       </p>

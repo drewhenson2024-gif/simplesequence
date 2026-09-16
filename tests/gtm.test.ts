@@ -69,7 +69,10 @@ describe("GTM — analytics", () => {
       replies: 0,
       replyRate: 0,
       restricted: 0,
+      connectionsSent: 0,
     });
+    expect(board.volume).toHaveLength(21);
+    expect(board.volume.every((day) => day.sent === 0 && day.skipped === 0)).toBe(true);
     expect(board.runs).toEqual([]);
   });
 
@@ -124,6 +127,7 @@ describe("GTM — analytics", () => {
     });
     const board = await workspaceAnalytics(ctx);
     expect(board.totals.sent).toBeGreaterThan(0);
+    expect(board.volume.reduce((n, day) => n + day.sent, 0)).toBe(board.totals.sent);
     expect(board.totals.replies).toBe(1);
     expect(board.totals.replyRate).toBeGreaterThan(0);
     const applied = await applyLearnings(ctx, created.id);

@@ -64,8 +64,8 @@ export default function ListsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">People</h1>
-      <p className="mt-2 max-w-2xl text-(--muted)">
+      <h1 className="text-2xl tracking-tight">People</h1>
+      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
         Paste LinkedIn profile URLs. We look up name, title, company, headline, location, and about
         from each profile. Agents send the same links over MCP. We do not search or build lists for you.
       </p>

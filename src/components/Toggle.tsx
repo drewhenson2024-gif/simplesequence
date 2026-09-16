@@ -58,3 +58,40 @@ export function SoonBadge() {
     <StatusBadge tone="wait">Coming soon</StatusBadge>
   );
 }
+
+export function Switch({
+  on,
+  onChange,
+  disabled = false,
+  label,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      className="inline-flex items-center gap-2 text-sm text-(--muted) disabled:opacity-40"
+    >
+      <span
+        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${
+          on ? "bg-(--ochre)" : "bg-(--line)"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] ${
+            on ? "left-4" : "left-0.5"
+          }`}
+        />
+      </span>
+      {label ? <span>{label}</span> : null}
+    </button>
+  );
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Switch } from "@/components/Toggle";
 import { renderTemplate, VARIABLE_GROUPS, type LeadFields } from "@/lib/domain/templates";
 
 export type EditorStep = {
@@ -42,8 +42,8 @@ function applyKind(kind: Kind): Pick<EditorStep, "channel" | "action"> {
 }
 
 function kindLabel(kind: Kind) {
-  if (kind === "connection") return "LinkedIn · Connection";
-  return "LinkedIn · Message";
+  if (kind === "connection") return "LinkedIn connection";
+  return "LinkedIn message";
 }
 
 function delayParts(hours: number): { value: number; unit: "h" | "d" } {
@@ -104,186 +104,191 @@ export function SequenceEditor({
   onChange: (steps: EditorStep[]) => void;
   onAdd: (index: number, kind: Kind) => void;
 }) {
-  const [activeStep, setActiveStep] = useState(0);
   const lead = leads[previewIndex] ?? leads[0] ?? FALLBACK_LEAD;
   const leadCount = Math.max(leads.length, 1);
-  const focused = Math.min(Math.max(activeStep, 0), Math.max(steps.length - 1, 0));
 
-  function patch(index: number, patch: Partial<EditorStep>) {
-    onChange(steps.map((step, i) => (i === index ? { ...step, ...patch } : step)));
+  function patch(index: number, next: Partial<EditorStep>) {
+    onChange(steps.map((step, i) => (i === index ? { ...step, ...next } : step)));
   }
 
   function remove(index: number) {
     onChange(steps.filter((_, i) => i !== index).map((step, i) => ({ ...step, stepIndex: i })));
   }
 
-  function insertVar(field: string) {
-    if (!editable || steps.length === 0) return;
-    const step = steps[focused];
+  function insertVar(index: number, field: string) {
+    if (!editable) return;
+    const step = steps[index];
     if (!step) return;
-    patch(focused, { bodyTemplate: `${step.bodyTemplate}{{${field}}}` });
+    patch(index, { bodyTemplate: `${step.bodyTemplate}{{${field}}}` });
   }
 
   return (
-    <div className="flex items-start gap-6">
-      <aside className="w-44 shrink-0 sticky top-24">
-        <p className="text-sm text-(--muted)">Variables</p>
-        {VARIABLE_GROUPS.map((group) => (
-          <div key={group.heading} className="mt-4">
-            <p className="text-xs uppercase tracking-wide text-(--muted)">{group.heading}</p>
-            <div className="mt-2 flex flex-col gap-1">
-              {group.fields.map((field) => (
+    <div className="min-w-0">
+      {steps.map((step, index) => {
+        const parts = delayParts(step.delayHours);
+        const previewBody = renderTemplate(step.bodyTemplate, asFields(lead));
+        const previewSubject = step.subjectTemplate ? renderTemplate(step.subjectTemplate, asFields(lead)) : null;
+        return (
+          <div key={`${step.stepIndex}-${index}`}>
+            {index > 0 ? (
+              <div className="flex justify-center py-2">
                 <button
-                  key={field}
                   type="button"
                   disabled={!editable}
-                  className="rounded border border-(--line) px-2 py-1 text-left text-xs"
-                  onClick={() => insertVar(field)}
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-(--line) text-(--muted) hover:text-(--ink) disabled:opacity-40"
+                  onClick={() => onAdd(index, "message")}
+                  aria-label="Add stage"
                 >
-                  {`{{${field}}}`}
+                  +
                 </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </aside>
-
-      <div className="min-w-0 flex-1">
-        {steps.map((step, index) => {
-          const parts = delayParts(step.delayHours);
-          const previewBody = renderTemplate(step.bodyTemplate, asFields(lead));
-          const previewSubject = step.subjectTemplate ? renderTemplate(step.subjectTemplate, asFields(lead)) : null;
-          return (
-            <div key={`${step.stepIndex}-${index}`}>
-              {index > 0 ? (
-                <div className="flex justify-center py-2">
-                  <button
-                    type="button"
-                    disabled={!editable}
-                    className="rounded-full border border-(--line) px-3 py-0.5 text-sm text-(--muted)"
-                    onClick={() => onAdd(index, "message")}
-                  >
-                    + Add stage
-                  </button>
-                </div>
-              ) : null}
-              <section className="rounded-lg border border-(--line) bg-(--panel) p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{index + 1}.</p>
-                    {editable ? (
-                      <select
-                        className="rounded border border-(--line) bg-(--input) px-2 py-1 text-sm"
-                        value={kindOf(step)}
-                        onChange={(e) => patch(index, applyKind(e.target.value as Kind))}
-                      >
-                        <option value="connection">LinkedIn · Connection</option>
-                        <option value="message">LinkedIn · Message</option>
-                      </select>
-                    ) : (
-                      <p className="text-sm">{kindLabel(kindOf(step))}</p>
-                    )}
-                    {index > 0 ? (
-                      <label className="ml-2 flex items-center gap-2 text-sm">
-                        <span className="text-(--muted)">Wait</span>
-                        <input
-                          type="number"
-                          min={0}
-                          disabled={!editable}
-                          className="w-16 rounded border border-(--line) bg-(--input) px-2 py-1"
-                          value={parts.value}
-                          onChange={(e) => patch(index, { delayHours: toHours(Number(e.target.value) || 0, parts.unit) })}
-                        />
-                        <select
-                          disabled={!editable}
-                          className="rounded border border-(--line) bg-(--input) px-2 py-1"
-                          value={parts.unit}
-                          onChange={(e) => patch(index, { delayHours: toHours(parts.value, e.target.value as "h" | "d") })}
-                        >
-                          <option value="h">hours</option>
-                          <option value="d">days</option>
-                        </select>
-                      </label>
-                    ) : null}
-                  </div>
+              </div>
+            ) : null}
+            <section className="rounded-xl border border-(--line) bg-(--panel) p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-(--muted)">{index + 1}.</p>
                   {editable ? (
-                    <button type="button" className="btn-danger rounded-2xl px-3 py-1 text-sm" onClick={() => remove(index)}>
+                    <select
+                      className="rounded-md border border-(--line) bg-(--paper) px-2 py-1 text-sm font-medium"
+                      value={kindOf(step)}
+                      onChange={(e) => patch(index, applyKind(e.target.value as Kind))}
+                    >
+                      <option value="connection">LinkedIn connection</option>
+                      <option value="message">LinkedIn message</option>
+                    </select>
+                  ) : (
+                    <p className="text-sm font-medium">{kindLabel(kindOf(step))}</p>
+                  )}
+                  {index > 0 ? (
+                    <label className="ml-2 flex items-center gap-2 text-sm text-(--muted)">
+                      Wait
+                      <input
+                        type="number"
+                        min={0}
+                        disabled={!editable}
+                        className="w-14 rounded-md border border-(--line) bg-(--paper) px-2 py-1 text-(--ink)"
+                        value={parts.value}
+                        onChange={(e) => patch(index, { delayHours: toHours(Number(e.target.value) || 0, parts.unit) })}
+                      />
+                      <select
+                        disabled={!editable}
+                        className="rounded-md border border-(--line) bg-(--paper) px-2 py-1"
+                        value={parts.unit}
+                        onChange={(e) => patch(index, { delayHours: toHours(parts.value, e.target.value as "h" | "d") })}
+                      >
+                        <option value="h">hours</option>
+                        <option value="d">days</option>
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-4">
+                  <Switch
+                    on={step.enabled}
+                    disabled={!editable}
+                    label="Enabled"
+                    onChange={(next) => patch(index, { enabled: next })}
+                  />
+                  {editable ? (
+                    <button type="button" className="text-sm text-(--danger)" onClick={() => remove(index)}>
                       Remove
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <div>
-                    <p className="text-sm text-(--muted)">Message{kindOf(step) === "connection" ? " (optional)" : ""}</p>
-                    <textarea
-                      disabled={!editable}
-                      className="mt-2 h-36 w-full rounded border border-(--line) bg-(--input) p-3 text-sm"
-                      value={step.bodyTemplate}
-                      onFocus={() => setActiveStep(index)}
-                      onChange={(e) => patch(index, { bodyTemplate: e.target.value })}
-                    />
-                    <p className="mt-2 text-xs text-(--muted)">
-                      {step.bodyTemplate.trim().split(/\s+/).filter(Boolean).length} words · {step.bodyTemplate.length}{" "}
-                      characters
-                    </p>
-                    <label className="mt-3 block text-sm text-(--muted)">
-                      LinkedIn image URL (optional)
-                      <input
+              </div>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div>
+                  <p className="text-sm text-(--muted)">
+                    Message{kindOf(step) === "connection" ? " (optional)" : ""}
+                  </p>
+                  <textarea
+                    disabled={!editable}
+                    className="mt-2 h-40 w-full rounded-md border border-(--line) bg-(--paper) p-3 text-sm"
+                    value={step.bodyTemplate}
+                    onChange={(e) => patch(index, { bodyTemplate: e.target.value })}
+                  />
+                  <p className="mt-2 text-xs text-(--muted)">
+                    {step.bodyTemplate.trim().split(/\s+/).filter(Boolean).length} words · {step.bodyTemplate.length}{" "}
+                    characters
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-1">
+                    {VARIABLE_GROUPS.flatMap((group) => group.fields).map((field) => (
+                      <button
+                        key={field}
+                        type="button"
                         disabled={!editable}
-                        className="mt-1 w-full rounded border border-(--line) bg-(--input) px-3 py-2 text-sm"
-                        placeholder="https://…"
-                        value={step.imageUrl ?? ""}
-                        onChange={(e) => patch(index, { imageUrl: e.target.value || null })}
-                      />
-                    </label>
+                        className="rounded-md border border-(--line) px-2 py-0.5 text-xs text-(--muted) hover:text-(--ink) disabled:opacity-40"
+                        onClick={() => insertVar(index, field)}
+                      >
+                        {`{{${field}}}`}
+                      </button>
+                    ))}
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between text-sm text-(--muted)">
-                      <span>Preview · {lead.fullName || "enroll people to fill merge fields"}</span>
-                      <span>
-                        <button
-                          type="button"
-                          className="px-1"
-                          onClick={() => onPreviewIndex((previewIndex - 1 + leadCount) % leadCount)}
-                        >
-                          ‹
-                        </button>
-                        {Math.min(previewIndex + 1, leadCount)} of {leadCount}
-                        <button
-                          type="button"
-                          className="px-1"
-                          onClick={() => onPreviewIndex((previewIndex + 1) % leadCount)}
-                        >
-                          ›
-                        </button>
-                      </span>
-                    </div>
-                    <div className="mt-2 min-h-36 rounded border border-(--line) bg-(--input) p-3 text-sm whitespace-pre-wrap">
-                      {previewSubject ? (
-                        <>
-                          <p className="text-(--muted)">Subject: {previewSubject}</p>
-                          {"\n"}
-                        </>
-                      ) : null}
-                      {previewBody || <span className="text-(--muted)">Empty</span>}
-                    </div>
+                  <label className="mt-3 block text-sm text-(--muted)">
+                    LinkedIn image URL (optional)
+                    <input
+                      disabled={!editable}
+                      className="mt-1 w-full rounded-md border border-(--line) bg-(--paper) px-3 py-2 text-sm"
+                      placeholder="https://…"
+                      value={step.imageUrl ?? ""}
+                      onChange={(e) => patch(index, { imageUrl: e.target.value || null })}
+                    />
+                  </label>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-sm text-(--muted)">
+                    <span>Preview · {lead.fullName || "enroll people to fill merge fields"}</span>
+                    <span>
+                      <button
+                        type="button"
+                        className="px-1"
+                        onClick={() => onPreviewIndex((previewIndex - 1 + leadCount) % leadCount)}
+                      >
+                        ‹
+                      </button>
+                      {Math.min(previewIndex + 1, leadCount)} of {leadCount}
+                      <button
+                        type="button"
+                        className="px-1"
+                        onClick={() => onPreviewIndex((previewIndex + 1) % leadCount)}
+                      >
+                        ›
+                      </button>
+                    </span>
+                  </div>
+                  <div className="mt-2 min-h-40 rounded-md border border-(--line) bg-(--input) p-3 text-sm whitespace-pre-wrap">
+                    {previewSubject ? (
+                      <>
+                        <p className="text-(--muted)">Subject: {previewSubject}</p>
+                        {"\n"}
+                      </>
+                    ) : null}
+                    {previewBody || <span className="text-(--muted)">Empty</span>}
                   </div>
                 </div>
-              </section>
-            </div>
-          );
-        })}
-        {editable ? (
-          <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <button type="button" className="rounded-2xl border border-(--line) px-3 py-2 text-sm" onClick={() => onAdd(steps.length, "connection")}>
-              + Connection
-            </button>
-            <button type="button" className="rounded-2xl border border-(--line) px-3 py-2 text-sm" onClick={() => onAdd(steps.length, "message")}>
-              + LinkedIn message
-            </button>
+              </div>
+            </section>
           </div>
-        ) : null}
-      </div>
+        );
+      })}
+      {editable ? (
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-(--line) px-3 py-1.5 text-sm"
+            onClick={() => onAdd(steps.length, "connection")}
+          >
+            + Connection
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-(--line) px-3 py-1.5 text-sm"
+            onClick={() => onAdd(steps.length, "message")}
+          >
+            + LinkedIn message
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

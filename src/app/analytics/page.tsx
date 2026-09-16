@@ -19,6 +19,43 @@ function statusTone(status: string): "ok" | "off" | "wait" | "danger" | "muted" 
   return "off";
 }
 
+function VolumeChart({ days }: { days: Array<{ date: string; sent: number; skipped: number }> }) {
+  const max = Math.max(0, ...days.map((day) => day.sent));
+  const ticks = max === 0 ? [0] : [0, max];
+  return (
+    <div>
+      <div className="flex h-44">
+        <div className="mr-3 flex flex-col justify-between py-1 text-xs text-(--muted)">
+          {ticks
+            .slice()
+            .reverse()
+            .map((tick) => (
+              <span key={tick}>{tick}</span>
+            ))}
+        </div>
+        <div className="flex min-w-0 flex-1 items-end gap-1 border-b border-(--line)">
+          {days.map((day) => {
+            const height = max === 0 ? 0 : (day.sent / max) * 100;
+            return (
+              <div
+                key={day.date}
+                title={`${day.date}: ${day.sent} sent${day.skipped ? `, ${day.skipped} skipped` : ""}`}
+                className="flex min-w-0 flex-1 flex-col justify-end"
+              >
+                <div className="w-full bg-(--line)" style={{ height: `${height}%` }} />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-2 flex justify-between pl-8 text-xs text-(--muted)">
+        <span>{days[0]?.date ?? ""}</span>
+        <span>{days[days.length - 1]?.date ?? ""}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const { data, loaded, error: cacheError } = useAnalytics();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -54,82 +91,88 @@ export default function AnalyticsPage() {
   }
 
   const totals = data?.totals;
+  const volume = data?.volume ?? [];
 
   return (
     <AppShell>
-      <h1 className="text-3xl">Analytics</h1>
-      <p className="mt-2 max-w-2xl text-(--muted)">
-        Stats for every run — what sent, what skipped, what replied. Suggestions come from those
-        numbers. They never rewrite a live sequence and never auto-start.
+      <h1 className="text-2xl tracking-tight">Analytics</h1>
+      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
+        LinkedIn send volume and replies from real jobs. Empty days stay at zero. Suggestions never
+        rewrite a live sequence and never auto-start.
       </p>
 
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-(--line) bg-(--line) sm:grid-cols-3 lg:grid-cols-6">
         {[
-          ["Runs", totals?.runs ?? 0],
-          ["Enrolled", totals?.enrolled ?? 0],
-          ["Sent", totals?.sent ?? 0],
-          ["Skipped", totals?.skipped ?? 0],
-          ["Failed", totals?.failed ?? 0],
-          ["Replies", totals?.replies ?? 0],
-          ["Reply rate", totals ? rateLabel(totals.replyRate, totals.sent) : "—"],
-          ["Restricted", totals?.restricted ?? 0],
+          ["Enrolled", loaded ? (totals?.enrolled ?? 0) : "…"],
+          ["Sent", loaded ? (totals?.sent ?? 0) : "…"],
+          ["Connections", loaded ? (totals?.connectionsSent ?? 0) : "…"],
+          ["Replies", loaded ? (totals?.replies ?? 0) : "…"],
+          ["Reply rate", loaded && totals ? rateLabel(totals.replyRate, totals.sent) : "…"],
+          ["Skipped", loaded ? (totals?.skipped ?? 0) : "…"],
         ].map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-(--muted)">{label}</p>
-            <p className="mt-2 text-2xl">{loaded ? value : "…"}</p>
+          <div key={label} className="bg-(--paper) px-4 py-3">
+            <p className="text-xs text-(--muted)">{label}</p>
+            <p className="mt-1 text-xl">{value}</p>
           </div>
         ))}
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <section className="rounded-2xl border border-(--line) bg-(--panel) p-4">
-          <h2 className="text-xl">Runs</h2>
+      <section className="mt-8">
+        <p className="text-sm text-(--muted)">LinkedIn volume</p>
+        <div className="mt-3">
+          {loaded ? (
+            <VolumeChart days={volume} />
+          ) : (
+            <p className="text-sm text-(--muted)">Loading…</p>
+          )}
+        </div>
+      </section>
+
+      <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <section>
+          <h2 className="text-lg">Runs</h2>
           <p className="mt-1 text-sm text-(--muted)">Every sequence in this workspace.</p>
           {!loaded ? (
             <p className="mt-4 text-sm text-(--muted)">Loading…</p>
           ) : data?.runs.length ? (
-            <ul className="mt-4 space-y-2">
+            <ul className="mt-4 divide-y divide-(--line) rounded-xl border border-(--line)">
               {data.runs.map((run) => (
                 <li key={run.id}>
                   <button
                     type="button"
                     onClick={() => setSelectedId(run.id)}
-                    className={`w-full rounded-xl border px-4 py-3 text-left ${
-                      run.id === selectedId
-                        ? "border-(--ochre) bg-(--input)"
-                        : "border-(--line) bg-(--input) hover:border-(--ochre)"
-                    }`}
+                    className={`w-full px-4 py-3 text-left ${run.id === selectedId ? "bg-(--input)" : "hover:bg-(--input)"}`}
                   >
                     <span className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium">{run.name}</span>
                       <StatusBadge tone={statusTone(run.status)}>{run.status}</StatusBadge>
                     </span>
-                    <span className="mt-2 block text-sm text-(--muted)">
-                      {run.sent} sent · {run.replies} replies · {rateLabel(run.replyRate, run.sent)} ·{" "}
-                      {run.skipped} skipped
+                    <span className="mt-1 block text-sm text-(--muted)">
+                      {run.sent} sent · {run.replies} replies · {rateLabel(run.replyRate, run.sent)} · {run.skipped}{" "}
+                      skipped
                     </span>
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-4 rounded-xl border border-(--line) bg-(--input) px-4 py-3 text-sm text-(--muted)">
+            <p className="mt-4 rounded-xl border border-(--line) px-4 py-3 text-sm text-(--muted)">
               No runs yet. Sequences you create will land here with zeros until something sends.
             </p>
           )}
         </section>
 
-        <section className="rounded-2xl border border-(--line) bg-(--panel) p-4">
+        <section>
           {selected ? (
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-(--muted)">Selected run</p>
-                  <h2 className="mt-1 text-xl">{selected.name}</h2>
+                  <h2 className="mt-1 text-lg">{selected.name}</h2>
                 </div>
-                <Link href={`/campaigns/${selected.id}`} className="btn-primary rounded-2xl px-4 py-1.5 text-sm">
+                <Link href={`/campaigns/${selected.id}`} className="btn-primary rounded-md px-4 py-1.5 text-sm">
                   Open sequence
                 </Link>
               </div>
@@ -189,14 +232,14 @@ export default function AnalyticsPage() {
                 <h3 className="text-sm font-medium">What worked / what didn’t</h3>
                 <ul className="mt-2 space-y-2">
                   {selected.insights.map((line) => (
-                    <li key={line} className="rounded-xl border border-(--line) bg-(--input) px-4 py-3 text-sm">
+                    <li key={line} className="rounded-lg bg-(--input) px-4 py-3 text-sm">
                       {line}
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div className="mt-6 rounded-xl border border-(--line) bg-(--input) p-4">
+              <div className="mt-6 rounded-xl border border-(--line) p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-medium">Suggestions</h3>
                 </div>
@@ -207,7 +250,7 @@ export default function AnalyticsPage() {
                   <button
                     type="button"
                     disabled={applyBusy}
-                    className="btn-primary rounded-full px-4 py-2 text-sm"
+                    className="btn-primary rounded-md px-4 py-2 text-sm"
                     onClick={() => void saveDraft()}
                   >
                     {applyBusy ? "Saving draft…" : "Save as new draft"}
@@ -215,7 +258,7 @@ export default function AnalyticsPage() {
                   <button
                     type="button"
                     disabled
-                    className="inline-flex items-center gap-2 rounded-full border border-(--line) px-4 py-2 text-sm text-(--muted)"
+                    className="inline-flex items-center gap-2 rounded-md border border-(--line) px-4 py-2 text-sm text-(--muted)"
                   >
                     AI draft from these stats
                     <SoonBadge />
@@ -225,9 +268,7 @@ export default function AnalyticsPage() {
             </>
           ) : (
             <p className="text-sm text-(--muted)">
-              {loaded
-                ? "Select a run to see step breakdown, skip reasons, and suggestions."
-                : "Loading…"}
+              {loaded ? "Select a run to see step breakdown, skip reasons, and suggestions." : "Loading…"}
             </p>
           )}
         </section>

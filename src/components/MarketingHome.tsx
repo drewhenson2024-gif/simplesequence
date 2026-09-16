@@ -163,14 +163,16 @@ function FeatureExample({ id }: { id: FeatureId }) {
 function AppChrome({ active, children }: { active: string; children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border border-(--line) bg-(--panel)">
-      <div className="flex flex-wrap gap-4 border-b border-(--line) px-4 py-3 text-sm text-(--muted)">
-        {["People", "Sequences", "Inbox", "Analytics", "Settings"].map((label) => (
-          <span key={label} className={label === active ? "text-(--ochre)" : ""}>
-            {label}
-          </span>
-        ))}
+      <div className="flex">
+        <div className="flex w-12 shrink-0 flex-col items-center gap-3 border-r border-(--line) py-3 text-[10px] text-(--muted)">
+          {["People", "Sequences", "Inbox", "Analytics", "Settings"].map((label) => (
+            <span key={label} className={label === active ? "text-(--ochre)" : ""}>
+              {label.slice(0, 1)}
+            </span>
+          ))}
+        </div>
+        <div className="min-w-0 flex-1 p-4">{children}</div>
       </div>
-      <div className="p-4">{children}</div>
     </div>
   );
 }

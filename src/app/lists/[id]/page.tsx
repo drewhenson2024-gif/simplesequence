@@ -121,7 +121,7 @@ export default function ListDetailPage() {
       <BackLink href="/lists" label="People" />
       <input
         aria-label="List name"
-        className="mt-3 w-full min-w-0 rounded border border-(--line) bg-(--input) px-3 py-2 text-3xl leading-normal"
+        className="mt-3 w-full min-w-0 rounded-md border border-(--line) bg-(--paper) px-3 py-2 text-2xl leading-normal"
         value={name}
         onChange={(e) => setName(e.target.value)}
       />

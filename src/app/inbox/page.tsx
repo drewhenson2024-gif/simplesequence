@@ -120,8 +120,8 @@ export default function InboxPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">Inbox</h1>
-      <p className="mt-2 max-w-2xl text-(--muted)">
+      <h1 className="text-2xl tracking-tight">Inbox</h1>
+      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
         Sort who needs a LinkedIn reply. Answering here does not start another campaign. Stop lead
         ends that person in the sequence.
       </p>

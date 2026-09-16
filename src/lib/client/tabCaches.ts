@@ -92,7 +92,9 @@ export type AnalyticsBoard = {
     replies: number;
     replyRate: number;
     restricted: number;
+    connectionsSent?: number;
   };
+  volume?: Array<{ date: string; sent: number; skipped: number }>;
   runs: Array<{
     id: string;
     name: string;

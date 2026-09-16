@@ -709,6 +709,12 @@ export type AnalyticsRun = {
   insights: string[];
 };
 
+export type VolumeDay = {
+  date: string;
+  sent: number;
+  skipped: number;
+};
+
 export type WorkspaceAnalytics = {
   totals: {
     runs: number;
@@ -719,9 +725,32 @@ export type WorkspaceAnalytics = {
     replies: number;
     replyRate: number;
     restricted: number;
+    connectionsSent: number;
   };
+  volume: VolumeDay[];
   runs: AnalyticsRun[];
 };
+
+function utcDayKey(isoStr: string) {
+  return isoStr.slice(0, 10);
+}
+
+function linkedinVolume(jobs: { status: string; claimedAt: string | null; createdAt: string }[], now: Date, days = 21): VolumeDay[] {
+  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const map = new Map<string, VolumeDay>();
+  for (let i = days - 1; i >= 0; i--) {
+    const date = new Date(end - i * 86_400_000).toISOString().slice(0, 10);
+    map.set(date, { date, sent: 0, skipped: 0 });
+  }
+  for (const job of jobs) {
+    if (job.status !== "sent" && job.status !== "skipped") continue;
+    const bucket = map.get(utcDayKey(job.claimedAt ?? job.createdAt));
+    if (!bucket) continue;
+    if (job.status === "sent") bucket.sent += 1;
+    else bucket.skipped += 1;
+  }
+  return [...map.values()];
+}
 
 function insightsForRun(run: Omit<AnalyticsRun, "insights">): string[] {
   if (run.sent === 0 && run.skipped === 0 && run.failed === 0) {
@@ -865,6 +894,10 @@ export async function workspaceAnalytics(ctx: AppContext): Promise<WorkspaceAnal
 
   const sent = runs.reduce((n, r) => n + r.sent, 0);
   const replies = runs.reduce((n, r) => n + r.replies, 0);
+  const connectionsSent = runs.reduce(
+    (n, run) => n + run.steps.filter((step) => step.action === "connection").reduce((sum, step) => sum + step.sent, 0),
+    0,
+  );
   return {
     totals: {
       runs: runs.length,
@@ -875,7 +908,9 @@ export async function workspaceAnalytics(ctx: AppContext): Promise<WorkspaceAnal
       replies,
       replyRate: sent === 0 ? 0 : replies / sent,
       restricted: runs.filter((r) => r.restricted).length,
+      connectionsSent,
     },
+    volume: linkedinVolume(jobs, ctx.clock.now()),
     runs,
   };
 }
