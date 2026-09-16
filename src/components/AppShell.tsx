@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { UndoBar } from "@/components/UndoBar";
 import { ensurePeopleCache } from "@/lib/client/peopleCache";
 import { ensureSequencesCache } from "@/lib/client/sequencesCache";
-import { ensureAnalyticsCache, ensureInboxCache, ensureSettingsCache } from "@/lib/client/tabCaches";
+import { ensureAnalyticsCache, ensureInboxCache, ensureSettingsCache, useSettings } from "@/lib/client/tabCaches";
 
 const NAV = [
   { href: "/lists", label: "People" },
@@ -26,6 +26,13 @@ export function BackLink({ href, label }: { href: string; label: string }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const { data } = useSettings();
+  const trialOn = Boolean(data?.settings?.developerTrial ?? data?.settings?.workspace?.developerTrial);
+  const items = [
+    ...NAV.slice(0, 4),
+    ...(trialOn ? [{ href: "/trials", label: "Trial" }] : []),
+    NAV[4]!,
+  ];
   useEffect(() => {
     void ensurePeopleCache();
     void ensureSequencesCache();
@@ -44,7 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             SimpleSequence
           </Link>
           <nav className="flex flex-wrap gap-5 text-sm">
-            {NAV.map((item) => {
+            {items.map((item) => {
               const active = path === item.href || path.startsWith(`${item.href}/`);
               return (
                 <Link

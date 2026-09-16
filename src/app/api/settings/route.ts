@@ -9,6 +9,7 @@ import { keysPresent } from "@/lib/unipile/port";
 const schema = z.object({
   sandbox: z.boolean().optional(),
   killSwitch: z.boolean().optional(),
+  developerTrial: z.boolean().optional(),
   timezone: z.string().optional(),
   weekendsEnabled: z.boolean().optional(),
 });
@@ -23,6 +24,7 @@ async function settingsPayload() {
   return {
     sandbox: Boolean(ws?.sandbox),
     killSwitch: Boolean(ws?.killSwitch),
+    developerTrial: Boolean(ws?.developerTrial),
     senders,
     workspace: ws,
     liveKeys: keysPresent(),

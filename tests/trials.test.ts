@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { looksLikeLinkedInRestriction, recordRestriction, runTrialAction, type AppContext } from "@/lib/app/commands";
+import {
+  CommandError,
+  listTrialRuns,
+  looksLikeLinkedInRestriction,
+  recordRestriction,
+  runTrialAction,
+  startTrialRun,
+  stopTrialRun,
+  tickTrialRun,
+  updateSettings,
+  type AppContext,
+} from "@/lib/app/commands";
 import { PROVIDER_THROTTLE } from "@/lib/domain/linkedinSafety";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { senderAccounts } from "@/lib/db/schema";
@@ -121,6 +132,58 @@ describe("developer trial", () => {
     const senders = await ctx.db.select().from(senderAccounts);
     expect(senders[0]?.status).toBe("healthy");
     expect(senders[0]?.lastError).toBeNull();
+  });
+
+  it("stores a run recipe and events, then refuses to continue it", async () => {
+    const { ctx, unipile } = await testApp();
+    await updateSettings(ctx, { developerTrial: true });
+    const run = await startTrialRun(ctx, {
+      action: "connection",
+      intervalSeconds: 5,
+      urls: ["https://www.linkedin.com/in/priya-rao", "https://www.linkedin.com/in/matt-cole"],
+    });
+    expect(run.status).toBe("running");
+    expect(run.urls).toHaveLength(2);
+    expect(run.intervalSeconds).toBe(5);
+    const first = await tickTrialRun(ctx, run.id);
+    expect(first.event?.sent).toBe(true);
+    expect(first.run.sent).toBe(1);
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(1);
+    const finished = await tickTrialRun(ctx, run.id);
+    expect(finished.run.status).toBe("finished");
+    expect(finished.run.events).toHaveLength(2);
+    await expect(tickTrialRun(ctx, run.id)).rejects.toThrow(CommandError);
+    const listed = await listTrialRuns(ctx);
+    expect(listed.enabled).toBe(true);
+    expect(listed.runs[0]?.id).toBe(run.id);
+    expect(listed.runs[0]?.endReason).toBe("finished");
+  });
+
+  it("keeps trial off until the setting is on", async () => {
+    const { ctx } = await testApp();
+    await expect(
+      startTrialRun(ctx, {
+        action: "connection",
+        intervalSeconds: 10,
+        urls: ["https://www.linkedin.com/in/priya-rao"],
+      }),
+    ).rejects.toThrow(/developer trial is off/);
+  });
+
+  it("turning the setting off archives a running run", async () => {
+    const { ctx } = await testApp();
+    await updateSettings(ctx, { developerTrial: true });
+    const run = await startTrialRun(ctx, {
+      action: "message",
+      intervalSeconds: 10,
+      urls: ["https://www.linkedin.com/in/priya-rao"],
+      body: "Hello",
+    });
+    await updateSettings(ctx, { developerTrial: false });
+    const listed = await listTrialRuns(ctx);
+    expect(listed.enabled).toBe(false);
+    expect(listed.runs[0]?.id).toBe(run.id);
+    expect(listed.runs[0]?.status).toBe("stopped");
   });
 
   it("already-restricted sender stays stopped", async () => {

@@ -11,6 +11,7 @@ export const workspaces = sqliteTable("workspaces", {
   protectDailyMax: integer("protect_daily_max"),
   sandbox: integer("sandbox").notNull().default(1),
   killSwitch: integer("kill_switch").notNull().default(0),
+  developerTrial: integer("developer_trial").notNull().default(0),
   mcpApiKey: text("mcp_api_key").notNull().default("dev-mcp-key"),
   createdAt: text("created_at").notNull(),
 });
@@ -164,6 +165,37 @@ export const idempotencyKeys = sqliteTable("idempotency_keys", {
 export const webhookEvents = sqliteTable("webhook_events", {
   eventId: text("event_id").primaryKey(),
   createdAt: text("created_at").notNull(),
+});
+
+export const trialRuns = sqliteTable("trial_runs", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  status: text("status").notNull(),
+  action: text("action").notNull(),
+  intervalSeconds: integer("interval_seconds").notNull(),
+  body: text("body").notNull().default(""),
+  urlsJson: text("urls_json").notNull(),
+  nextIndex: integer("next_index").notNull().default(0),
+  senderId: text("sender_id"),
+  dryRun: integer("dry_run").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  startedAt: text("started_at").notNull(),
+  endedAt: text("ended_at"),
+  endReason: text("end_reason"),
+});
+
+export const trialEvents = sqliteTable("trial_events", {
+  id: text("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  url: text("url").notNull(),
+  at: text("at").notNull(),
+  sent: integer("sent").notNull().default(0),
+  restricted: integer("restricted").notNull().default(0),
+  throttled: integer("throttled").notNull().default(0),
+  quota: integer("quota").notNull().default(0),
+  dryRun: integer("dry_run").notNull().default(0),
+  error: text("error"),
 });
 
 export const signals = sqliteTable("signals", {

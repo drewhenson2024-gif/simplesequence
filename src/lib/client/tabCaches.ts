@@ -125,6 +125,7 @@ export type AnalyticsBoard = {
 export type SettingsSnapshot = {
   sandbox: number | boolean;
   killSwitch: number | boolean;
+  developerTrial?: number | boolean;
   liveKeys?: boolean;
   senders: Array<{
     id: string;
@@ -138,6 +139,7 @@ export type SettingsSnapshot = {
     timezone: string;
     sandbox: number;
     killSwitch: number;
+    developerTrial?: number;
     mcpApiKey: string;
   };
 };

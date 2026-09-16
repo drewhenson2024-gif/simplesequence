@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
 import { LINKEDIN_INVITE_DAILY_CAP } from "@/lib/domain/linkedinSafety";
@@ -45,6 +45,7 @@ function accountState(sender: Sender | undefined, liveKeys: boolean) {
 }
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { data: bundle, set: setBundle } = useSettings();
   const data = bundle?.settings ?? null;
   const audit = bundle?.audit ?? [];
@@ -88,9 +89,10 @@ export default function SettingsPage() {
     const json = await res.json();
     if (!res.ok) {
       setError(typeof json.error === "string" ? json.error : "Could not save settings");
-      return;
+      return false;
     }
     setBundle({ settings: json as Settings, audit });
+    return true;
   }
 
   async function connect() {
@@ -126,6 +128,7 @@ export default function SettingsPage() {
   const li = accountState(linkedin, Boolean(data.liveKeys));
   const sandboxOn = Boolean(data.workspace?.sandbox);
   const killOn = Boolean(data.workspace?.killSwitch);
+  const trialOn = Boolean(data.developerTrial ?? data.workspace?.developerTrial);
 
   return (
     <AppShell>
@@ -208,13 +211,30 @@ export default function SettingsPage() {
           that key. Agents can import URLs, draft, Start, inbox, and analytics. Import never auto-sends.
           Connecting LinkedIn is this page.
         </p>
-        <p className="mt-3 text-sm">
-          <Link href="/trials" className="underline">
-            Developer trial
-          </Link>
-          {" — "}
-          fire actions at a pace and stop on throttle or restrict. Does not create LinkedIn accounts.
-        </p>
+      </section>
+
+      <section className="mt-6 rounded-lg border border-(--line) bg-(--panel) p-4">
+        <h2 className="text-xl">Developer</h2>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="font-medium">Developer trial</p>
+            <p className="mt-1 max-w-lg text-sm text-(--muted)">
+              On = Trial appears in the top nav. Pace LinkedIn actions and keep a history of each
+              run. Does not create LinkedIn accounts.
+            </p>
+          </div>
+          <Toggle
+            on={trialOn}
+            onLabel="On"
+            offLabel="Off"
+            onChange={(next) =>
+              void (async () => {
+                const ok = await patch({ developerTrial: next });
+                if (ok && next) router.push("/trials");
+              })()
+            }
+          />
+        </div>
       </section>
 
       <section className="mt-6 rounded-lg border border-(--line) bg-(--panel) p-4">

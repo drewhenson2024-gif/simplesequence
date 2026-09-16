@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   protect_daily_max INTEGER,
   sandbox INTEGER NOT NULL DEFAULT 1,
   kill_switch INTEGER NOT NULL DEFAULT 0,
+  developer_trial INTEGER NOT NULL DEFAULT 0,
   mcp_api_key TEXT NOT NULL DEFAULT 'dev-mcp-key',
   created_at TEXT NOT NULL
 );
@@ -157,6 +158,35 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   event_id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trial_runs (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  action TEXT NOT NULL,
+  interval_seconds INTEGER NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  urls_json TEXT NOT NULL,
+  next_index INTEGER NOT NULL DEFAULT 0,
+  sender_id TEXT,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  sent_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  end_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS trial_events (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL,
+  url TEXT NOT NULL,
+  at TEXT NOT NULL,
+  sent INTEGER NOT NULL DEFAULT 0,
+  restricted INTEGER NOT NULL DEFAULT 0,
+  throttled INTEGER NOT NULL DEFAULT 0,
+  quota INTEGER NOT NULL DEFAULT 0,
+  dry_run INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
 CREATE TABLE IF NOT EXISTS signals (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
@@ -193,7 +223,7 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 async function readSchemaVersion(client: Client): Promise<number> {
   try {
@@ -219,6 +249,7 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE leads ADD COLUMN headline TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE leads ADD COLUMN location TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE leads ADD COLUMN about TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE workspaces ADD COLUMN developer_trial INTEGER NOT NULL DEFAULT 0",
   ]) {
     try {
       await client.execute(sql);

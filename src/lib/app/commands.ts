@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lte } from "drizzle-orm";
 import type { Client } from "@libsql/client";
 import type { Db } from "../db/client";
 import * as tables from "../db/schema";
@@ -1479,20 +1479,24 @@ export async function updateSettings(
   input: {
     sandbox?: boolean;
     killSwitch?: boolean;
+    developerTrial?: boolean;
     timezone?: string;
     weekendsEnabled?: boolean;
   },
 ) {
   const ws = await getWorkspace(ctx);
+  const nextTrial = input.developerTrial === undefined ? ws.developerTrial : input.developerTrial ? 1 : 0;
   await ctx.db
     .update(tables.workspaces)
     .set({
       sandbox: input.sandbox === undefined ? ws.sandbox : input.sandbox ? 1 : 0,
       killSwitch: input.killSwitch === undefined ? ws.killSwitch : input.killSwitch ? 1 : 0,
+      developerTrial: nextTrial,
       timezone: input.timezone ?? ws.timezone,
       weekendsEnabled: input.weekendsEnabled === undefined ? ws.weekendsEnabled : input.weekendsEnabled ? 1 : 0,
     })
     .where(eq(tables.workspaces.id, ctx.workspaceId));
+  if (!nextTrial) await stopOpenTrialRuns(ctx, "stopped");
   await audit(ctx, "update_settings", input);
   return getWorkspace(ctx);
 }
@@ -2172,6 +2176,237 @@ export async function runTrialAction(
       senderStatus: sender.status,
     };
   }
+}
+
+export type TrialEventView = {
+  id: string;
+  url: string;
+  at: string;
+  sent: boolean;
+  restricted: boolean;
+  throttled: boolean;
+  quota: boolean;
+  dryRun: boolean;
+  error: string | null;
+};
+
+export type TrialRunView = {
+  id: string;
+  status: string;
+  action: "connection" | "message";
+  intervalSeconds: number;
+  body: string;
+  urls: string[];
+  nextIndex: number;
+  sent: number;
+  failed: number;
+  dryRun: boolean;
+  startedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  events: TrialEventView[];
+};
+
+function parseTrialUrls(urlsJson: string): string[] {
+  try {
+    const parsed = JSON.parse(urlsJson) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((row): row is string => typeof row === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function viewTrialEvent(row: typeof tables.trialEvents.$inferSelect): TrialEventView {
+  return {
+    id: row.id,
+    url: row.url,
+    at: row.at,
+    sent: Boolean(row.sent),
+    restricted: Boolean(row.restricted),
+    throttled: Boolean(row.throttled),
+    quota: Boolean(row.quota),
+    dryRun: Boolean(row.dryRun),
+    error: row.error,
+  };
+}
+
+function viewTrialRun(row: typeof tables.trialRuns.$inferSelect, events: TrialEventView[]): TrialRunView {
+  return {
+    id: row.id,
+    status: row.status,
+    action: row.action === "message" ? "message" : "connection",
+    intervalSeconds: row.intervalSeconds,
+    body: row.body,
+    urls: parseTrialUrls(row.urlsJson),
+    nextIndex: row.nextIndex,
+    sent: row.sentCount,
+    failed: row.failedCount,
+    dryRun: Boolean(row.dryRun),
+    startedAt: row.startedAt,
+    endedAt: row.endedAt,
+    endReason: row.endReason,
+    events,
+  };
+}
+
+async function hydrateTrialRun(ctx: AppContext, row: typeof tables.trialRuns.$inferSelect): Promise<TrialRunView> {
+  const events = await ctx.db
+    .select()
+    .from(tables.trialEvents)
+    .where(eq(tables.trialEvents.runId, row.id));
+  events.sort((a, b) => a.at.localeCompare(b.at));
+  return viewTrialRun(row, events.map(viewTrialEvent));
+}
+
+async function requireDeveloperTrial(ctx: AppContext) {
+  const ws = await getWorkspace(ctx);
+  if (!ws.developerTrial) throw new CommandError("developer trial is off", 403);
+  return ws;
+}
+
+async function stopOpenTrialRuns(ctx: AppContext, reason: string) {
+  const open = await ctx.db
+    .select()
+    .from(tables.trialRuns)
+    .where(and(eq(tables.trialRuns.workspaceId, ctx.workspaceId), eq(tables.trialRuns.status, "running")));
+  const endedAt = iso(ctx.clock.now());
+  for (const row of open) {
+    await ctx.db
+      .update(tables.trialRuns)
+      .set({ status: "stopped", endedAt, endReason: reason })
+      .where(eq(tables.trialRuns.id, row.id));
+  }
+}
+
+async function closeTrialRun(
+  ctx: AppContext,
+  runId: string,
+  status: "finished" | "stopped" | "restricted" | "throttled" | "quota",
+  reason: string,
+) {
+  await ctx.db
+    .update(tables.trialRuns)
+    .set({ status, endedAt: iso(ctx.clock.now()), endReason: reason })
+    .where(eq(tables.trialRuns.id, runId));
+}
+
+export async function listTrialRuns(ctx: AppContext): Promise<{ enabled: boolean; runs: TrialRunView[] }> {
+  const ws = await getWorkspace(ctx);
+  const rows = await ctx.db
+    .select()
+    .from(tables.trialRuns)
+    .where(eq(tables.trialRuns.workspaceId, ctx.workspaceId))
+    .orderBy(desc(tables.trialRuns.startedAt));
+  const runs = await Promise.all(rows.map((row) => hydrateTrialRun(ctx, row)));
+  return { enabled: Boolean(ws.developerTrial), runs };
+}
+
+export async function startTrialRun(
+  ctx: AppContext,
+  input: { action: "connection" | "message"; intervalSeconds: number; urls: string[]; body?: string },
+): Promise<TrialRunView> {
+  const ws = await requireDeveloperTrial(ctx);
+  if (ws.killSwitch) throw new CommandError("kill switch is on", 409);
+  const urls = [...new Set(input.urls.map((url) => normalizeLinkedInUrl(url)).filter((url): url is string => Boolean(url)))];
+  if (!urls.length) throw new CommandError("linkedin url required", 400);
+  await stopOpenTrialRuns(ctx, "replaced");
+  const id = newId("trl");
+  const startedAt = iso(ctx.clock.now());
+  await ctx.db.insert(tables.trialRuns).values({
+    id,
+    workspaceId: ctx.workspaceId,
+    status: "running",
+    action: input.action,
+    intervalSeconds: Math.max(1, Math.floor(input.intervalSeconds) || 1),
+    body: (input.body ?? "").trim(),
+    urlsJson: JSON.stringify(urls),
+    nextIndex: 0,
+    senderId: null,
+    dryRun: ws.sandbox ? 1 : 0,
+    sentCount: 0,
+    failedCount: 0,
+    startedAt,
+    endedAt: null,
+    endReason: null,
+  });
+  await audit(ctx, "trial_run_started", { runId: id, action: input.action, urls: urls.length });
+  const [row] = await ctx.db.select().from(tables.trialRuns).where(eq(tables.trialRuns.id, id)).limit(1);
+  if (!row) throw new CommandError("trial run not found", 404);
+  return hydrateTrialRun(ctx, row);
+}
+
+export async function tickTrialRun(ctx: AppContext, runId: string): Promise<{ run: TrialRunView; event: TrialEventView | null }> {
+  await requireDeveloperTrial(ctx);
+  const [row] = await ctx.db.select().from(tables.trialRuns).where(eq(tables.trialRuns.id, runId)).limit(1);
+  if (!row || row.workspaceId !== ctx.workspaceId) throw new CommandError("trial run not found", 404);
+  if (row.status !== "running") throw new CommandError("trial ended — start a new run", 409);
+  const urls = parseTrialUrls(row.urlsJson);
+  if (row.nextIndex >= urls.length) {
+    await closeTrialRun(ctx, row.id, "finished", "finished");
+    const [closed] = await ctx.db.select().from(tables.trialRuns).where(eq(tables.trialRuns.id, row.id)).limit(1);
+    return { run: await hydrateTrialRun(ctx, closed ?? row), event: null };
+  }
+  const url = urls[row.nextIndex]!;
+  const result = await runTrialAction(ctx, { action: row.action === "message" ? "message" : "connection", url, body: row.body });
+  const eventId = newId("tev");
+  const at = iso(ctx.clock.now());
+  await ctx.db.insert(tables.trialEvents).values({
+    id: eventId,
+    runId: row.id,
+    url,
+    at,
+    sent: result.sent ? 1 : 0,
+    restricted: result.restricted ? 1 : 0,
+    throttled: result.throttled ? 1 : 0,
+    quota: result.quota ? 1 : 0,
+    dryRun: result.dryRun ? 1 : 0,
+    error: result.error,
+  });
+  const nextIndex = row.nextIndex + 1;
+  const sentCount = row.sentCount + (result.sent ? 1 : 0);
+  const failedCount = row.failedCount + (!result.sent && !result.restricted && !result.throttled && !result.quota ? 1 : 0);
+  await ctx.db
+    .update(tables.trialRuns)
+    .set({
+      nextIndex,
+      sentCount,
+      failedCount,
+      dryRun: result.dryRun ? 1 : row.dryRun,
+      senderId: result.senderStatus ? row.senderId : row.senderId,
+    })
+    .where(eq(tables.trialRuns.id, row.id));
+  if (result.restricted) await closeTrialRun(ctx, row.id, "restricted", "restricted");
+  else if (result.throttled) await closeTrialRun(ctx, row.id, "throttled", "throttled");
+  else if (result.quota) await closeTrialRun(ctx, row.id, "quota", "invite limit");
+  else if (nextIndex >= urls.length) await closeTrialRun(ctx, row.id, "finished", "finished");
+  const [updated] = await ctx.db.select().from(tables.trialRuns).where(eq(tables.trialRuns.id, row.id)).limit(1);
+  return {
+    run: await hydrateTrialRun(ctx, updated ?? row),
+    event: {
+      id: eventId,
+      url,
+      at,
+      sent: result.sent,
+      restricted: result.restricted,
+      throttled: result.throttled,
+      quota: result.quota,
+      dryRun: result.dryRun,
+      error: result.error,
+    },
+  };
+}
+
+export async function stopTrialRun(ctx: AppContext, runId: string): Promise<TrialRunView> {
+  await requireDeveloperTrial(ctx);
+  const [row] = await ctx.db.select().from(tables.trialRuns).where(eq(tables.trialRuns.id, runId)).limit(1);
+  if (!row || row.workspaceId !== ctx.workspaceId) throw new CommandError("trial run not found", 404);
+  if (row.status === "running") {
+    await closeTrialRun(ctx, row.id, "stopped", "stopped");
+    await audit(ctx, "trial_run_stopped", { runId });
+  }
+  const [updated] = await ctx.db.select().from(tables.trialRuns).where(eq(tables.trialRuns.id, row.id)).limit(1);
+  if (!updated) throw new CommandError("trial run not found", 404);
+  return hydrateTrialRun(ctx, updated);
 }
 
 export function defaultClock(): Clock {
