@@ -32,8 +32,13 @@ export function channelFromUnipileAccount(account: UnipileAccount): "linkedin" |
   return null;
 }
 
+export type HostedAuthOpts = {
+  type?: "create" | "reconnect";
+  reconnectAccount?: string;
+};
+
 export type UnipilePort = {
-  hostedAuthUrl(channel: "linkedin"): Promise<string>;
+  hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string>;
   invite(input: UnipileInviteInput): Promise<UnipileSendResult>;
   message(input: UnipileMessageInput): Promise<UnipileSendResult>;
   listAccounts?(): Promise<UnipileAccount[]>;
@@ -53,8 +58,11 @@ export type UnipilePort = {
 export class MockUnipile implements UnipilePort {
   readonly calls: Array<{ kind: string; input: unknown }> = [];
 
-  async hostedAuthUrl(channel: "linkedin"): Promise<string> {
-    return `https://unipile.example/hosted-auth?channel=${channel}&sandbox=1`;
+  async hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string> {
+    this.calls.push({ kind: "hostedAuth", input: { channel, ...opts } });
+    const type = opts?.type ?? "create";
+    const reconnect = opts?.reconnectAccount ? `&reconnect=${opts.reconnectAccount}` : "";
+    return `https://unipile.example/hosted-auth?channel=${channel}&type=${type}${reconnect}`;
   }
 
   async invite(input: UnipileInviteInput): Promise<UnipileSendResult> {
@@ -162,18 +170,24 @@ export class LiveUnipile implements UnipilePort {
     return body;
   }
 
-  async hostedAuthUrl(channel: "linkedin"): Promise<string> {
+  async hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string> {
+    const type = opts?.type ?? "create";
+    if (type === "reconnect" && !opts?.reconnectAccount) {
+      throw new Error("Unipile reconnect needs an account id");
+    }
     const expires = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
     const body = (await this.request("/api/v1/hosted/accounts/link", {
       method: "POST",
       body: JSON.stringify({
-        type: "create",
+        type,
         providers: ["LINKEDIN"],
         api_url: this.base(),
         expiresOn: expires,
         success_redirect_url: `${this.opts.appUrl}/settings?connected=${channel}`,
         failure_redirect_url: `${this.opts.appUrl}/settings?connected=failed`,
-        name: `simplesequence:${channel}`,
+        ...(type === "reconnect"
+          ? { reconnect_account: opts!.reconnectAccount }
+          : { name: `simplesequence:${channel}:${Date.now()}` }),
       }),
     })) as { url?: string };
     if (!body.url) throw new Error("Unipile hosted auth did not return a url");

@@ -274,13 +274,53 @@ export async function importLeads(
   return result;
 }
 
-async function linkedinAccountId(ctx: AppContext): Promise<string | undefined> {
-  const rows = await ctx.db
+export function pickLinkedInSenderId(
+  senders: Array<{ id: string; channel: string; status: string; unipileAccountId?: string | null }>,
+  preferredId?: string | null,
+): string | null {
+  const rows = senders.filter((s) => s.channel === "linkedin");
+  if (preferredId && rows.some((s) => s.id === preferredId)) return preferredId;
+  const live = rows.find(
+    (s) => s.status === "healthy" && s.unipileAccountId && !s.unipileAccountId.startsWith("mock_"),
+  );
+  return live?.id ?? rows[0]?.id ?? null;
+}
+
+async function listLinkedInSenders(ctx: AppContext) {
+  return ctx.db
     .select()
     .from(tables.senderAccounts)
     .where(and(eq(tables.senderAccounts.workspaceId, ctx.workspaceId), eq(tables.senderAccounts.channel, "linkedin")));
-  const live = rows.find((s) => s.unipileAccountId && !s.unipileAccountId.startsWith("mock_"));
-  return live?.unipileAccountId ?? rows[0]?.unipileAccountId ?? undefined;
+}
+
+async function resolveLinkedInSender(ctx: AppContext): Promise<SenderId | null> {
+  const ws = await getWorkspace(ctx);
+  const id = pickLinkedInSenderId(await listLinkedInSenders(ctx), ws.linkedinSenderId);
+  return id ? asSenderId(id) : null;
+}
+
+async function requireLinkedInSender(ctx: AppContext): Promise<SenderId> {
+  const existing = await resolveLinkedInSender(ctx);
+  if (existing) return existing;
+  const ws = await getWorkspace(ctx);
+  if (ws.sandbox) return ensureSandboxSender(ctx, "linkedin");
+  throw new CommandError("LinkedIn sender required", 409);
+}
+
+async function linkedinAccountId(ctx: AppContext): Promise<string | undefined> {
+  const senderId = await resolveLinkedInSender(ctx);
+  if (!senderId) return undefined;
+  const [row] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, senderId))
+    .limit(1);
+  return row?.unipileAccountId ?? undefined;
+}
+
+function hostedAuthFailure(err: unknown): CommandError {
+  const message = err instanceof Error ? err.message : "Could not start LinkedIn connect";
+  return new CommandError(message, 502);
 }
 
 async function enrichDraft(ctx: AppContext, row: LeadDraft, accountId?: string): Promise<LeadDraft> {
@@ -944,10 +984,7 @@ export async function startCampaign(ctx: AppContext, campaignId: string) {
   if (ws.killSwitch) throw new CommandError("kill switch is on", 409);
   const needsLi = campaign.steps.some((s) => s.channel === "linkedin" && !isRemovedStep(s));
   let liSender = campaign.linkedinSenderId;
-  if (ws.sandbox) {
-    if (needsLi && !liSender) liSender = await ensureSandboxSender(ctx, "linkedin");
-  }
-  if (needsLi && !liSender) throw new CommandError("LinkedIn sender required", 409);
+  if (needsLi && !liSender) liSender = await requireLinkedInSender(ctx);
   if (liSender) await clearSenderThrottle(ctx, liSender);
 
   await ctx.db
@@ -1075,10 +1112,15 @@ export async function resumeCampaign(ctx: AppContext, campaignId: string) {
 
 export async function connectAccount(ctx: AppContext, channel: "linkedin" = "linkedin") {
   const ws = await getWorkspace(ctx);
-  const url = await ctx.unipile.hostedAuthUrl(channel);
-  const id = await ensureSandboxSender(ctx, channel);
   const live = keysPresent();
+  let url: string;
+  try {
+    url = await ctx.unipile.hostedAuthUrl(channel, { type: "create" });
+  } catch (err) {
+    throw hostedAuthFailure(err);
+  }
   if (!live) {
+    const id = await ensureSandboxSender(ctx, channel);
     await ctx.db
       .update(tables.senderAccounts)
       .set({
@@ -1087,26 +1129,62 @@ export async function connectAccount(ctx: AppContext, channel: "linkedin" = "lin
         displayName: "Sandbox LinkedIn",
       })
       .where(eq(tables.senderAccounts.id, id));
-  } else {
-    const [row] = await ctx.db
-      .select()
-      .from(tables.senderAccounts)
-      .where(eq(tables.senderAccounts.id, id))
-      .limit(1);
-    const alreadyLive = Boolean(row?.unipileAccountId && !row.unipileAccountId.startsWith("mock_"));
-    if (!alreadyLive) {
+    if (!ws.linkedinSenderId) {
       await ctx.db
-        .update(tables.senderAccounts)
-        .set({
-          status: "pending",
-          unipileAccountId: null,
-          displayName: "Connecting LinkedIn…",
-        })
-        .where(eq(tables.senderAccounts.id, id));
+        .update(tables.workspaces)
+        .set({ linkedinSenderId: id })
+        .where(eq(tables.workspaces.id, ctx.workspaceId));
     }
+    await audit(ctx, "connect_account", { channel, senderId: id });
+    return { senderId: id, authUrl: url, sandbox: Boolean(ws.sandbox), live };
+  }
+  const id = newId("snd") as SenderId;
+  await ctx.db.insert(tables.senderAccounts).values({
+    id,
+    workspaceId: ctx.workspaceId,
+    channel,
+    status: "pending",
+    unipileAccountId: null,
+    displayName: "Connecting LinkedIn…",
+    timezone: "America/Los_Angeles",
+    lastError: null,
+    createdAt: iso(ctx.clock.now()),
+  });
+  if (!ws.linkedinSenderId) {
+    await ctx.db
+      .update(tables.workspaces)
+      .set({ linkedinSenderId: id })
+      .where(eq(tables.workspaces.id, ctx.workspaceId));
   }
   await audit(ctx, "connect_account", { channel, senderId: id });
   return { senderId: id, authUrl: url, sandbox: Boolean(ws.sandbox), live };
+}
+
+export async function reconnectAccount(ctx: AppContext, senderId: string) {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(
+      and(
+        eq(tables.senderAccounts.id, senderId),
+        eq(tables.senderAccounts.workspaceId, ctx.workspaceId),
+        eq(tables.senderAccounts.channel, "linkedin"),
+      ),
+    )
+    .limit(1);
+  if (!sender) throw new CommandError("LinkedIn sender not found", 404);
+  const accountId = sender.unipileAccountId;
+  if (!accountId || accountId.startsWith("mock_")) {
+    throw new CommandError("Sync Unipile accounts first, then reconnect this row.", 409);
+  }
+  let url: string;
+  try {
+    url = await ctx.unipile.hostedAuthUrl("linkedin", { type: "reconnect", reconnectAccount: accountId });
+  } catch (err) {
+    throw hostedAuthFailure(err);
+  }
+  await audit(ctx, "reconnect_account", { channel: "linkedin", senderId });
+  return { senderId, authUrl: url, live: true };
 }
 
 export async function syncUnipileAccounts(ctx: AppContext) {
@@ -1195,6 +1273,13 @@ export async function syncUnipileAccounts(ctx: AppContext) {
       createdAt: now,
     });
     mapped.push(id);
+  }
+  const ws = await getWorkspace(ctx);
+  if (!ws.linkedinSenderId && mapped[0]) {
+    await ctx.db
+      .update(tables.workspaces)
+      .set({ linkedinSenderId: mapped[0] })
+      .where(eq(tables.workspaces.id, ctx.workspaceId));
   }
   await audit(ctx, "sync_unipile_accounts", { count: mapped.length });
   return { synced: mapped.length, senders: await connectStatus(ctx) };
@@ -1517,10 +1602,31 @@ export async function updateSettings(
     developerTrial?: boolean;
     timezone?: string;
     weekendsEnabled?: boolean;
+    linkedinSenderId?: string | null;
   },
 ) {
   const ws = await getWorkspace(ctx);
   const nextTrial = input.developerTrial === undefined ? ws.developerTrial : input.developerTrial ? 1 : 0;
+  let linkedinSenderId = ws.linkedinSenderId ?? null;
+  if (input.linkedinSenderId !== undefined) {
+    if (input.linkedinSenderId) {
+      const [sender] = await ctx.db
+        .select()
+        .from(tables.senderAccounts)
+        .where(
+          and(
+            eq(tables.senderAccounts.id, input.linkedinSenderId),
+            eq(tables.senderAccounts.workspaceId, ctx.workspaceId),
+            eq(tables.senderAccounts.channel, "linkedin"),
+          ),
+        )
+        .limit(1);
+      if (!sender) throw new CommandError("LinkedIn sender not found", 404);
+      linkedinSenderId = sender.id;
+    } else {
+      linkedinSenderId = null;
+    }
+  }
   await ctx.db
     .update(tables.workspaces)
     .set({
@@ -1529,6 +1635,7 @@ export async function updateSettings(
       developerTrial: nextTrial,
       timezone: input.timezone ?? ws.timezone,
       weekendsEnabled: input.weekendsEnabled === undefined ? ws.weekendsEnabled : input.weekendsEnabled ? 1 : 0,
+      linkedinSenderId,
     })
     .where(eq(tables.workspaces.id, ctx.workspaceId));
   if (!nextTrial) await stopOpenTrialRuns(ctx, "stopped");
@@ -2119,7 +2226,7 @@ export async function runTrialAction(
   if (ws.killSwitch) throw new CommandError("kill switch is on", 409);
   const url = normalizeLinkedInUrl(input.url);
   if (!url) throw new CommandError("linkedin url required", 400);
-  const senderId = await ensureSandboxSender(ctx, "linkedin");
+  const senderId = await requireLinkedInSender(ctx);
   const [sender] = await ctx.db
     .select()
     .from(tables.senderAccounts)

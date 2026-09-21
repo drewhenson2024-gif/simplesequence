@@ -64,7 +64,9 @@ export default function TrialsPage() {
   const { data, loaded } = useSettings();
   const trialOn = Boolean(data?.settings?.developerTrial ?? data?.settings?.workspace?.developerTrial);
   const sandbox = Boolean(data?.settings?.sandbox);
-  const sender = data?.settings?.senders?.find((s) => s.channel === "linkedin");
+  const sender =
+    data?.settings?.senders?.find((s) => s.id === data.settings.linkedinSenderId) ??
+    data?.settings?.senders?.find((s) => s.channel === "linkedin");
   const restricted = sender?.status === "restricted";
 
   const [action, setAction] = useState<"connection" | "message">("connection");

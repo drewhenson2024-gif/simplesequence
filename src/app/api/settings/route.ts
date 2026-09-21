@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { updateSettings } from "@/lib/app/commands";
+import { pickLinkedInSenderId, updateSettings } from "@/lib/app/commands";
 import { getRuntime } from "@/lib/app/runtime";
 import { withCommand } from "@/lib/http/respond";
 import { senderAccounts, workspaces } from "@/lib/db/schema";
@@ -12,6 +12,7 @@ const schema = z.object({
   developerTrial: z.boolean().optional(),
   timezone: z.string().optional(),
   weekendsEnabled: z.boolean().optional(),
+  linkedinSenderId: z.string().nullable().optional(),
 });
 
 async function settingsPayload() {
@@ -26,6 +27,7 @@ async function settingsPayload() {
     killSwitch: Boolean(ws?.killSwitch),
     developerTrial: Boolean(ws?.developerTrial),
     senders,
+    linkedinSenderId: pickLinkedInSenderId(senders, ws?.linkedinSenderId),
     workspace: ws,
     liveKeys: keysPresent(),
   };

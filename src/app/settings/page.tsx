@@ -18,30 +18,26 @@ type Sender = {
 
 type Settings = SettingsSnapshot;
 
-function pickSender(senders: Sender[]): Sender | undefined {
-  const rows = senders.filter((s) => s.channel === "linkedin");
-  return (
-    rows.find((s) => s.status === "healthy" && s.unipileAccountId && !s.unipileAccountId.startsWith("mock_")) ??
-    rows.find((s) => s.status === "healthy") ??
-    rows[0]
-  );
-}
-
-function accountState(sender: Sender | undefined, liveKeys: boolean) {
-  if (!sender) return { tone: "off" as const, label: "Not connected", live: false };
+function accountState(sender: Sender, liveKeys: boolean) {
   const mock = !sender.unipileAccountId || sender.unipileAccountId.startsWith("mock_");
-  if (sender.status === "restricted") return { tone: "danger" as const, label: "Restricted", live: false };
+  if (sender.status === "restricted") return { tone: "danger" as const, label: "Restricted" };
   if (sender.lastError === "provider_throttle") {
-    return { tone: "wait" as const, label: "Stopped — LinkedIn asked us to wait", live: !mock };
+    return { tone: "wait" as const, label: "Stopped — LinkedIn asked us to wait" };
   }
-  if (sender.status === "pending") return { tone: "wait" as const, label: "Connecting…", live: false };
-  if (sender.status === "healthy" && !mock) return { tone: "ok" as const, label: "Connected", live: true };
+  if (sender.status === "pending") return { tone: "wait" as const, label: "Connecting" };
+  if (sender.status === "healthy" && !mock) return { tone: "ok" as const, label: "Connected" };
   if (sender.status === "healthy" && mock) {
     return liveKeys
-      ? { tone: "off" as const, label: "Not connected", live: false }
-      : { tone: "ok" as const, label: "Sandbox", live: false };
+      ? { tone: "off" as const, label: "Not connected" }
+      : { tone: "ok" as const, label: "Sandbox" };
   }
-  return { tone: "muted" as const, label: sender.status, live: false };
+  return { tone: "muted" as const, label: sender.status };
+}
+
+function accountHint(sender: Sender) {
+  const id = sender.unipileAccountId;
+  if (!id || id.startsWith("mock_")) return null;
+  return id.slice(-6);
 }
 
 export default function SettingsPage() {
@@ -51,7 +47,7 @@ export default function SettingsPage() {
   const audit = bundle?.audit ?? [];
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   async function refresh() {
     const [res, a] = await Promise.all([fetch("/api/settings"), fetch("/api/audit")]);
@@ -71,9 +67,8 @@ export default function SettingsPage() {
       if (connected === "linkedin" && first.liveKeys) {
         await fetch("/api/accounts/sync", { method: "POST" });
         const after = await refresh();
-        const sender = pickSender(after.senders);
-        const state = accountState(sender, true);
-        setNotice(state.live ? "LinkedIn is connected." : "Still waiting on Unipile. Use Sync if this doesn’t update.");
+        const selected = after.senders.find((s) => s.id === after.linkedinSenderId);
+        setNotice(selected ? `${selected.displayName} is connected.` : "Still waiting on Unipile. Use Sync if this doesn’t update.");
       }
       if (connected) window.history.replaceState({}, "", "/settings");
     })();
@@ -95,9 +90,9 @@ export default function SettingsPage() {
     return true;
   }
 
-  async function connect() {
+  async function addLinkedIn() {
     setError(null);
-    setBusy(true);
+    setBusy("add");
     try {
       const res = await fetch("/api/accounts/linkedin/connect", { method: "POST" });
       const body = await res.json();
@@ -108,11 +103,30 @@ export default function SettingsPage() {
       if (body.authUrl && data?.liveKeys) window.location.href = body.authUrl;
       else {
         setNotice("Sandbox LinkedIn is ready.");
-        const resSettings = await fetch("/api/settings");
-        setBundle({ settings: (await resSettings.json()) as Settings, audit });
+        await refresh();
       }
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }
+
+  async function reconnect(senderId: string) {
+    setError(null);
+    setBusy(`reconnect:${senderId}`);
+    try {
+      const res = await fetch("/api/accounts/linkedin/reconnect", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ senderId }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(typeof body.error === "string" ? body.error : "Could not start reconnect");
+        return;
+      }
+      if (body.authUrl) window.location.href = body.authUrl;
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -124,8 +138,8 @@ export default function SettingsPage() {
     );
   }
 
-  const linkedin = pickSender(data.senders);
-  const li = accountState(linkedin, Boolean(data.liveKeys));
+  const linkedin = data.senders.filter((s) => s.channel === "linkedin");
+  const selectedId = data.linkedinSenderId ?? null;
   const sandboxOn = Boolean(data.workspace?.sandbox);
   const killOn = Boolean(data.workspace?.killSwitch);
   const trialOn = Boolean(data.developerTrial ?? data.workspace?.developerTrial);
@@ -134,37 +148,97 @@ export default function SettingsPage() {
     <AppShell>
       <h1 className="text-2xl tracking-tight">Settings</h1>
       <p className="mt-1 max-w-2xl text-sm text-(--muted)">
-        Connect LinkedIn. Safety switches live here so a sequence never starts sending by surprise.
+        Connect LinkedIn. Pick which account sends. Safety switches live here so a sequence never starts sending by surprise.
       </p>
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
       {notice ? <p className="mt-4 text-sm text-(--ok)">{notice}</p> : null}
 
-      <section className="mt-6 grid gap-4 md:grid-cols-2">
-        <AccountCard
-          title="LinkedIn"
-          hint="Used for connection requests and LinkedIn messages."
-          state={li}
-          name={li.live || (!data.liveKeys && linkedin) ? linkedin?.displayName : undefined}
-          busy={busy}
-          actionLabel={li.live ? "Reconnect" : "Connect LinkedIn"}
-          onConnect={() => void connect()}
-        />
+      <section className="mt-6">
+        <h2 className="text-xl">LinkedIn</h2>
+        <p className="mt-1 max-w-2xl text-sm text-(--muted)">
+          Used for connection requests and LinkedIn messages. The selected account is the one that sends.
+        </p>
+        <ul className="mt-4 space-y-2">
+          {linkedin.length === 0 ? (
+            <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
+              No LinkedIn accounts yet.
+            </li>
+          ) : null}
+          {linkedin.map((sender) => {
+            const state = accountState(sender, Boolean(data.liveKeys));
+            const selected = sender.id === selectedId;
+            const hint = accountHint(sender);
+            const canReconnect = Boolean(
+              sender.unipileAccountId && !sender.unipileAccountId.startsWith("mock_"),
+            );
+            return (
+              <li
+                key={sender.id}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-(--panel) px-4 py-3 ${
+                  selected ? "border-(--ochre)" : "border-(--line)"
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{sender.displayName}</p>
+                    <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+                    {selected ? <span className="text-xs font-medium uppercase tracking-wide text-(--ochre)">Selected</span> : null}
+                  </div>
+                  {hint ? <p className="mt-1 text-sm text-(--muted)">Account · {hint}</p> : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {selected ? (
+                    <span className="px-3 py-1.5 text-sm text-(--muted)">Sending from this account</span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
+                      onClick={() => void patch({ linkedinSenderId: sender.id })}
+                    >
+                      Use this
+                    </button>
+                  )}
+                  {canReconnect ? (
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
+                      onClick={() => void reconnect(sender.id)}
+                    >
+                      {busy === `reconnect:${sender.id}` ? "Opening…" : "Reconnect"}
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={Boolean(busy)}
+            className="btn-primary rounded-full px-4 py-2 disabled:opacity-40"
+            onClick={() => void addLinkedIn()}
+          >
+            {busy === "add" ? "Opening…" : "Add LinkedIn"}
+          </button>
+          {data.liveKeys ? (
+            <button
+              type="button"
+              className="rounded-full border border-(--line) px-4 py-2 text-sm"
+              onClick={async () => {
+                await fetch("/api/accounts/sync", { method: "POST" });
+                await refresh();
+              }}
+            >
+              Sync Unipile accounts
+            </button>
+          ) : (
+            <p className="text-sm text-(--muted)">Unipile keys aren’t loaded, so Add LinkedIn uses a sandbox account.</p>
+          )}
+        </div>
       </section>
-      {data.liveKeys ? (
-        <button
-          type="button"
-          className="mt-3 rounded-2xl border border-(--line) px-4 py-1.5 text-sm"
-          onClick={async () => {
-            await fetch("/api/accounts/sync", { method: "POST" });
-            const res = await fetch("/api/settings");
-            setBundle({ settings: (await res.json()) as Settings, audit });
-          }}
-        >
-          Sync Unipile accounts
-        </button>
-      ) : (
-        <p className="mt-3 text-sm text-(--muted)">Unipile keys aren’t loaded, so Connect uses a sandbox account.</p>
-      )}
 
       <section className="mt-8 rounded-lg border border-(--line) bg-(--panel) p-4">
         <h2 className="text-xl">Safety</h2>
@@ -251,42 +325,5 @@ export default function SettingsPage() {
         </ul>
       </section>
     </AppShell>
-  );
-}
-
-function AccountCard({
-  title,
-  hint,
-  state,
-  name,
-  busy,
-  actionLabel,
-  onConnect,
-}: {
-  title: string;
-  hint: string;
-  state: { tone: "ok" | "off" | "wait" | "danger" | "muted"; label: string };
-  name?: string;
-  busy: boolean;
-  actionLabel: string;
-  onConnect: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-(--line) bg-(--panel) p-4">
-      <div className="flex items-start justify-between gap-3">
-        <h2 className="text-xl">{title}</h2>
-        <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-      </div>
-      <p className="mt-2 text-sm text-(--muted)">{hint}</p>
-      {name ? <p className="mt-3 font-medium">{name}</p> : <p className="mt-3 text-sm text-(--muted)">No account yet.</p>}
-      <button
-        type="button"
-        disabled={busy}
-        className="btn-primary mt-4 rounded-2xl px-4 py-2 disabled:opacity-40"
-        onClick={onConnect}
-      >
-        {busy ? "Opening…" : actionLabel}
-      </button>
-    </div>
   );
 }

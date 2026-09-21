@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   sandbox INTEGER NOT NULL DEFAULT 1,
   kill_switch INTEGER NOT NULL DEFAULT 0,
   developer_trial INTEGER NOT NULL DEFAULT 0,
+  linkedin_sender_id TEXT,
   mcp_api_key TEXT NOT NULL DEFAULT 'dev-mcp-key',
   created_at TEXT NOT NULL
 );
@@ -223,7 +224,7 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 async function readSchemaVersion(client: Client): Promise<number> {
   try {
@@ -250,6 +251,7 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE leads ADD COLUMN location TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE leads ADD COLUMN about TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE workspaces ADD COLUMN developer_trial INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE workspaces ADD COLUMN linkedin_sender_id TEXT",
   ]) {
     try {
       await client.execute(sql);

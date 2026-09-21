@@ -129,6 +129,7 @@ export type SettingsSnapshot = {
   killSwitch: number | boolean;
   developerTrial?: number | boolean;
   liveKeys?: boolean;
+  linkedinSenderId?: string | null;
   senders: Array<{
     id: string;
     channel: string;
@@ -142,6 +143,7 @@ export type SettingsSnapshot = {
     sandbox: number;
     killSwitch: number;
     developerTrial?: number;
+    linkedinSenderId?: string | null;
     mcpApiKey: string;
   };
 };
