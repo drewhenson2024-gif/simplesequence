@@ -181,6 +181,48 @@ describe("rolling account pace", () => {
     expect(view.accountBudget?.connectionCap).toBe(1);
     expect(view.accountBudget?.note).toContain("leaves that window");
   });
+
+  it("updates queued copy and delay while a sequence is running", async () => {
+    const { ctx, advance } = await testApp();
+    const { getCampaign, updateCampaign } = await import("@/lib/app/commands");
+    const { messages } = await import("@/lib/db/schema");
+    const list = await importList(
+      ctx,
+      "edit-live",
+      `${csv("Ada", "ada").trim()}\nGrace,https://www.linkedin.com/in/grace\n`,
+    );
+    const campaign = await createCampaign(ctx, { name: "edit live", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx);
+    advance(2 * 60 * 1000);
+    const before = await getCampaign(ctx, campaign.id);
+    const sent = before.jobs.find((job) => job.status === "sent");
+    const pending = before.jobs.find((job) => job.status === "pending" && job.action === "connection");
+    const follow = before.jobs.find((job) => job.action === "message" && job.stepIndex === 1);
+    expect(sent?.action).toBe("connection");
+    expect(pending).toBeTruthy();
+    expect(follow?.status).toBe("pending");
+    await updateCampaign(ctx, campaign.id, {
+      steps: before.steps.map((step) => ({
+        stepIndex: step.stepIndex,
+        channel: "linkedin" as const,
+        action: step.action === "connection" ? ("connection" as const) : ("message" as const),
+        delayHours: step.stepIndex === 1 ? step.delayHours + 24 : step.delayHours,
+        bodyTemplate: step.action === "connection" ? "Updated hello {{first_name}}" : step.bodyTemplate,
+        subjectTemplate: step.subjectTemplate,
+        enabled: step.enabled !== 0,
+      })),
+    });
+    const after = await getCampaign(ctx, campaign.id);
+    expect(after.steps[0]?.bodyTemplate).toBe("Updated hello {{first_name}}");
+    expect(after.jobs.find((job) => job.id === sent?.id)?.status).toBe("sent");
+    expect(after.jobs.find((job) => job.id === pending?.id)?.status).toBe("pending");
+    expect(after.jobs.find((job) => job.id === follow?.id)?.dueAt).not.toBe(follow?.dueAt);
+    const sentMessages = await ctx.db.select().from(messages);
+    expect(sentMessages.some((row) => row.body.includes("Updated hello"))).toBe(false);
+  });
 });
 
 async function importList(ctx: AppContext, name: string, content: string) {

@@ -522,7 +522,11 @@ export async function updateCampaign(
     await audit(ctx, "update_campaign", { campaignId, priority: input.priority });
     return getCampaign(ctx, campaignId);
   }
-  if (campaign.status !== "draft") throw new CommandError("only drafts can be edited", 409);
+  const liveEdit = campaign.status === "running" || campaign.status === "paused";
+  if (campaign.status !== "draft" && !liveEdit) throw new CommandError("only drafts can be edited", 409);
+  if (liveEdit && input.linkedinSenderId !== undefined) {
+    throw new CommandError("the sending account stays fixed while the sequence is running", 409);
+  }
   rejectRemovedSteps(input.steps);
   await ctx.db
     .update(tables.campaigns)
@@ -550,6 +554,7 @@ export async function updateCampaign(
         })),
       );
     }
+    if (liveEdit) await reconcilePendingSteps(ctx, campaignId, input.steps);
   }
   await audit(ctx, "update_campaign", { campaignId });
   return getCampaign(ctx, campaignId);
@@ -1107,6 +1112,75 @@ async function scheduleStep(
     error: null,
     createdAt: iso(ctx.clock.now()),
   });
+}
+
+async function reconcilePendingSteps(
+  ctx: AppContext,
+  campaignId: string,
+  steps: SequenceStepDraft[],
+) {
+  const [campaign] = await ctx.db
+    .select()
+    .from(tables.campaigns)
+    .where(eq(tables.campaigns.id, campaignId))
+    .limit(1);
+  if (!campaign?.linkedinSenderId) return;
+  const ws = await getWorkspace(ctx);
+  const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.campaignId, campaignId));
+  const enrollments = await ctx.db
+    .select()
+    .from(tables.enrollments)
+    .where(eq(tables.enrollments.campaignId, campaignId));
+  const leadIds = enrollments.map((row) => row.leadId);
+  const leadRows =
+    leadIds.length === 0 ? [] : await ctx.db.select().from(tables.leads).where(inArray(tables.leads.id, leadIds));
+  const leadById = new Map(leadRows.map((lead) => [lead.id, lead]));
+  const enrollmentById = new Map(enrollments.map((row) => [row.id, row]));
+
+  for (const job of jobs) {
+    if (job.status !== "pending") continue;
+    const step = steps.find((item) => item.stepIndex === job.stepIndex);
+    if (step && step.enabled !== false && !isRemovedStep(step)) {
+      const due = addJitter(new Date(new Date(job.createdAt).getTime() + step.delayHours * 3600 * 1000), job.id);
+      const dueAt = iso(due);
+      if (dueAt !== job.dueAt) {
+        await ctx.db.update(tables.sendJobs).set({ dueAt }).where(eq(tables.sendJobs.id, job.id));
+      }
+      continue;
+    }
+    await ctx.db
+      .update(tables.sendJobs)
+      .set({ status: transitionJob("pending", "cancelled"), error: "step removed" })
+      .where(eq(tables.sendJobs.id, job.id));
+    const enrollment = enrollmentById.get(job.enrollmentId);
+    if (!enrollment || isTerminalEnrollment(enrollment.status as EnrollmentStatus)) continue;
+    const next = nextEnabledIndex(steps, job.stepIndex);
+    if (next == null) {
+      if (enrollment.status === "waiting") {
+        const mid = transitionEnrollment("waiting", "in_progress");
+        await ctx.db
+          .update(tables.enrollments)
+          .set({ status: transitionEnrollment(mid, "completed"), updatedAt: iso(ctx.clock.now()) })
+          .where(eq(tables.enrollments.id, enrollment.id));
+      }
+      continue;
+    }
+    await ctx.db
+      .update(tables.enrollments)
+      .set({ nextStepIndex: next, updatedAt: iso(ctx.clock.now()) })
+      .where(eq(tables.enrollments.id, enrollment.id));
+    await scheduleStep(ctx, {
+      campaignId: asCampaignId(campaignId),
+      enrollmentId: asEnrollmentId(enrollment.id),
+      lead: leadById.get(enrollment.leadId) ?? null,
+      steps,
+      stepIndex: next,
+      linkedinSenderId: asSenderId(campaign.linkedinSenderId),
+      sandbox: Boolean(ws.sandbox),
+      working: hoursOf(ws),
+      from: ctx.clock.now(),
+    });
+  }
 }
 
 export async function pauseCampaign(ctx: AppContext, campaignId: string) {

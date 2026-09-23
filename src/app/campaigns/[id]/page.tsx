@@ -141,7 +141,7 @@ export default function CampaignDetailPage() {
       .filter((lead): lead is PreviewLead => Boolean(lead));
   }, [data]);
 
-  const editable = data?.status === "draft";
+  const editable = data?.status === "draft" || data?.status === "running" || data?.status === "paused";
   const view = tab ?? (data?.status === "draft" ? "stages" : "report");
   const durationHours = steps.reduce((sum, step) => sum + step.delayHours, 0);
   const durationLabel =
@@ -384,26 +384,33 @@ export default function CampaignDetailPage() {
               setDirty(true);
             }}
           />
-          <section className="mt-8 rounded-xl border border-(--line) p-4">
-            <h2 className="text-lg">People in this sequence</h2>
-            <p className="mt-1 text-sm text-(--muted)">Pick a list of LinkedIn URLs, then add those people here.</p>
-            <div className="mt-3 flex gap-2">
-              <select
-                className="rounded-md border border-(--line) bg-(--paper) px-3 py-2"
-                value={listId}
-                onChange={(e) => setListId(e.target.value)}
-              >
-                {lists.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-              <button type="button" onClick={() => void addLeads()} className="rounded-md border border-(--line) px-4 py-2">
-                Add from list
-              </button>
-            </div>
-          </section>
+          {data.status === "running" || data.status === "paused" ? (
+            <p className="mt-4 text-sm text-(--muted)">
+              Saving updates steps that have not been sent. Sent steps stay as they went out.
+            </p>
+          ) : null}
+          {data.status === "draft" ? (
+            <section className="mt-8 rounded-xl border border-(--line) p-4">
+              <h2 className="text-lg">People in this sequence</h2>
+              <p className="mt-1 text-sm text-(--muted)">Pick a list of LinkedIn URLs, then add those people here.</p>
+              <div className="mt-3 flex gap-2">
+                <select
+                  className="rounded-md border border-(--line) bg-(--paper) px-3 py-2"
+                  value={listId}
+                  onChange={(e) => setListId(e.target.value)}
+                >
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" onClick={() => void addLeads()} className="rounded-md border border-(--line) px-4 py-2">
+                  Add from list
+                </button>
+              </div>
+            </section>
+          ) : null}
         </div>
       ) : (
         <div className="mt-6">

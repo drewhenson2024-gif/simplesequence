@@ -206,7 +206,7 @@ export const MCP_TOOLS = [
   {
     name: "update_sequence",
     description:
-      "Save a draft sequence (name or full steps list). Same as Save changes. Running sequences cannot be edited, except priority, which decides who sends when the account has one slot. Never sends.",
+      "Save a sequence. On a draft, this is the same as Save changes. On a running sequence, queued steps pick up the new copy and delay. Steps that already sent stay sent. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
