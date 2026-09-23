@@ -42,6 +42,7 @@ export type UnipilePort = {
   invite(input: UnipileInviteInput): Promise<UnipileSendResult>;
   message(input: UnipileMessageInput): Promise<UnipileSendResult>;
   listAccounts?(): Promise<UnipileAccount[]>;
+  ownProfile?(accountId: string): Promise<{ name?: string; profileUrl?: string }>;
   lookupProfile?(input: { profileUrl: string; accountId?: string }): Promise<{
     firstName?: string;
     lastName?: string;
@@ -77,6 +78,11 @@ export class MockUnipile implements UnipilePort {
 
   async listAccounts(): Promise<UnipileAccount[]> {
     return [];
+  }
+
+  async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string }> {
+    this.calls.push({ kind: "ownProfile", input: { accountId } });
+    return { name: "Sandbox LinkedIn", profileUrl: `https://www.linkedin.com/in/${accountId}` };
   }
 
   async lookupProfile(input: { profileUrl: string }): Promise<{
@@ -198,6 +204,22 @@ export class LiveUnipile implements UnipilePort {
     const body = (await this.request("/api/v1/accounts")) as { items?: UnipileAccount[] } | UnipileAccount[];
     if (Array.isArray(body)) return body;
     return body.items ?? [];
+  }
+
+  async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string }> {
+    const profile = (await this.request(
+      `/api/v1/users/me?account_id=${encodeURIComponent(accountId)}`,
+    )) as {
+      first_name?: string;
+      last_name?: string;
+      public_profile_url?: string;
+      public_identifier?: string;
+    };
+    const name = [profile.first_name, profile.last_name].filter(Boolean).join(" ") || undefined;
+    const profileUrl =
+      profile.public_profile_url ||
+      (profile.public_identifier ? `https://www.linkedin.com/in/${profile.public_identifier}` : undefined);
+    return { name, profileUrl };
   }
 
   async lookupProfile(input: { profileUrl: string; accountId?: string }): Promise<{

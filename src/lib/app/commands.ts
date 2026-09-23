@@ -28,6 +28,7 @@ import {
   type SenderStatus,
 } from "../domain/fsm";
 import { addJitter, inWorkingHours, nextWorkingSlot, type WorkingHours } from "../domain/jitter";
+import { linkedInProfileHref } from "../domain/linkedinProfile";
 import {
   calendarDay,
   classifyLinkedInProviderError,
@@ -1281,8 +1282,34 @@ export async function syncUnipileAccounts(ctx: AppContext) {
       .set({ linkedinSenderId: mapped[0] })
       .where(eq(tables.workspaces.id, ctx.workspaceId));
   }
+  await refreshLinkedInProfiles(ctx, { force: true });
   await audit(ctx, "sync_unipile_accounts", { count: mapped.length });
   return { synced: mapped.length, senders: await connectStatus(ctx) };
+}
+
+export async function refreshLinkedInProfiles(ctx: AppContext, opts?: { force?: boolean }) {
+  if (!ctx.unipile.ownProfile) return;
+  const senders = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.workspaceId, ctx.workspaceId));
+  for (const sender of senders) {
+    if (sender.channel !== "linkedin") continue;
+    const accountId = sender.unipileAccountId;
+    if (!accountId || accountId.startsWith("mock_")) continue;
+    if (!opts?.force && sender.profileUrl) continue;
+    try {
+      const profile = await ctx.unipile.ownProfile(accountId);
+      const href = linkedInProfileHref(profile.profileUrl);
+      if (!href) continue;
+      await ctx.db
+        .update(tables.senderAccounts)
+        .set({ profileUrl: href })
+        .where(eq(tables.senderAccounts.id, sender.id));
+    } catch {
+      // Leave the row without a link. Settings still loads.
+    }
+  }
 }
 
 export async function connectStatus(ctx: AppContext) {

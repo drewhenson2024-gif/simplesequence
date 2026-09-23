@@ -136,6 +136,7 @@ export type SettingsSnapshot = {
     status: string;
     displayName: string;
     unipileAccountId?: string | null;
+    profileUrl?: string | null;
     lastError?: string | null;
   }>;
   workspace?: {

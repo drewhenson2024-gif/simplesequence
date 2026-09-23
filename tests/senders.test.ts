@@ -5,16 +5,20 @@ import {
   createCampaign,
   pickLinkedInSenderId,
   reconnectAccount,
+  refreshLinkedInProfiles,
   runTrialAction,
   startCampaign,
+  syncUnipileAccounts,
   updateSettings,
   type AppContext,
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { senderAccounts } from "@/lib/db/schema";
+import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
-import { MockUnipile } from "@/lib/unipile/port";
+import { MockUnipile, type UnipileAccount } from "@/lib/unipile/port";
+import { eq } from "drizzle-orm";
 
 async function testApp(unipile: MockUnipile = new MockUnipile()) {
   const app = createAppDb(":memory:");
@@ -147,5 +151,46 @@ describe("linkedin sender roster", () => {
     await runTrialAction(ctx, { action: "connection", url: "https://www.linkedin.com/in/priya-rao" });
     const invite = unipile.calls.find((c) => c.kind === "invite");
     expect((invite?.input as { accountId?: string }).accountId).toBe("acct_b");
+  });
+
+  it("stores each account's LinkedIn profile URL", async () => {
+    class Roster extends MockUnipile {
+      async listAccounts(): Promise<UnipileAccount[]> {
+        return [
+          { id: "acct_a", type: "LINKEDIN", name: "Drew A" },
+          { id: "acct_b", type: "LINKEDIN", name: "Drew B" },
+        ];
+      }
+      async ownProfile(accountId: string) {
+        if (accountId === "acct_b") return { profileUrl: "https://evil.example/in/drew" };
+        return { profileUrl: "https://www.linkedin.com/in/drew-a" };
+      }
+    }
+    const { ctx } = await testApp(new Roster());
+    await syncUnipileAccounts(ctx);
+    const rows = await ctx.db.select().from(senderAccounts);
+    const a = rows.find((row) => row.unipileAccountId === "acct_a");
+    const b = rows.find((row) => row.unipileAccountId === "acct_b");
+    expect(a?.profileUrl).toBe("https://www.linkedin.com/in/drew-a");
+    expect(b?.profileUrl ?? null).toBeNull();
+  });
+
+  it("fills a missing profile link without asking again once it is stored", async () => {
+    const { ctx, unipile } = await testApp();
+    await insertSender(ctx, { id: "snd_a", displayName: "Drew A", unipileAccountId: "acct_a" });
+    await refreshLinkedInProfiles(ctx);
+    const [first] = await ctx.db.select().from(senderAccounts).where(eq(senderAccounts.id, "snd_a"));
+    expect(first?.profileUrl).toBe("https://www.linkedin.com/in/acct_a");
+    const calls = unipile.calls.filter((c) => c.kind === "ownProfile").length;
+    await refreshLinkedInProfiles(ctx);
+    expect(unipile.calls.filter((c) => c.kind === "ownProfile").length).toBe(calls);
+  });
+
+  it("accepts only https LinkedIn profile URLs", () => {
+    expect(linkedInProfileHref("https://www.linkedin.com/in/drew-henson")).toBe(
+      "https://www.linkedin.com/in/drew-henson",
+    );
+    expect(linkedInProfileHref("http://www.linkedin.com/in/drew-henson")).toBeNull();
+    expect(linkedInProfileHref("https://evil.example/in/drew")).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
+import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 import { LINKEDIN_INVITE_DAILY_CAP } from "@/lib/domain/linkedinSafety";
 import { useSettings, type SettingsSnapshot } from "@/lib/client/tabCaches";
 
@@ -13,8 +14,14 @@ type Sender = {
   status: string;
   displayName: string;
   unipileAccountId?: string | null;
+  profileUrl?: string | null;
   lastError?: string | null;
 };
+
+function profileLabel(href: string) {
+  const url = new URL(href);
+  return `${url.hostname}${url.pathname}`.replace(/\/$/, "");
+}
 
 type Settings = SettingsSnapshot;
 
@@ -168,6 +175,7 @@ export default function SettingsPage() {
             const state = accountState(sender, Boolean(data.liveKeys));
             const selected = sender.id === selectedId;
             const hint = accountHint(sender);
+            const profileHref = linkedInProfileHref(sender.profileUrl);
             const canReconnect = Boolean(
               sender.unipileAccountId && !sender.unipileAccountId.startsWith("mock_"),
             );
@@ -184,7 +192,18 @@ export default function SettingsPage() {
                     <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
                     {selected ? <span className="text-xs font-medium uppercase tracking-wide text-(--ochre)">Selected</span> : null}
                   </div>
-                  {hint ? <p className="mt-1 text-sm text-(--muted)">Account · {hint}</p> : null}
+                  {profileHref ? (
+                    <a
+                      href={profileHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 block truncate text-sm text-(--ochre) underline"
+                    >
+                      {profileLabel(profileHref)}
+                    </a>
+                  ) : hint ? (
+                    <p className="mt-1 text-sm text-(--muted)">Account · {hint}</p>
+                  ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {selected ? (

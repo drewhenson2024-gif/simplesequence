@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { pickLinkedInSenderId, updateSettings } from "@/lib/app/commands";
+import { pickLinkedInSenderId, refreshLinkedInProfiles, updateSettings } from "@/lib/app/commands";
 import { getRuntime } from "@/lib/app/runtime";
 import { withCommand } from "@/lib/http/respond";
 import { senderAccounts, workspaces } from "@/lib/db/schema";
@@ -17,6 +17,7 @@ const schema = z.object({
 
 async function settingsPayload() {
   const ctx = await getRuntime();
+  await refreshLinkedInProfiles(ctx);
   const [senders, wsRows] = await Promise.all([
     ctx.db.select().from(senderAccounts).where(eq(senderAccounts.workspaceId, ctx.workspaceId)),
     ctx.db.select().from(workspaces).where(eq(workspaces.id, ctx.workspaceId)).limit(1),
