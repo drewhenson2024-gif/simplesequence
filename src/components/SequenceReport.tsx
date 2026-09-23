@@ -143,11 +143,19 @@ export function SequenceReport({
             ))}
           </div>
           {accountBudget ? (
-            <p className="mt-3 text-sm text-(--muted)">
-              {accountBudget.connectionsUsed} of {accountBudget.connectionCap} connection requests in the last 24
-              hours.
-              {accountBudget.note ? ` ${accountBudget.note}` : ""}
-            </p>
+            <div className="mt-3 grid gap-px overflow-hidden rounded-xl border border-(--line) bg-(--line) sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <div className="bg-(--paper) px-4 py-3">
+                <p className="text-xs text-(--muted)">Connections</p>
+                <p className="mt-1 text-xl">
+                  {accountBudget.connectionsUsed} of {accountBudget.connectionCap}
+                </p>
+                <p className="mt-1 text-xs text-(--muted)">Last 24 hours</p>
+              </div>
+              <div className="bg-(--paper) px-4 py-3">
+                <p className="text-xs text-(--muted)">Next step</p>
+                <p className="mt-1">{accountBudget.note ?? "Nothing is waiting on the account."}</p>
+              </div>
+            </div>
           ) : null}
         </section>
 
