@@ -6,6 +6,7 @@ import {
   pickLinkedInSenderId,
   reconnectAccount,
   refreshLinkedInProfiles,
+  removeLinkedInAccount,
   runTrialAction,
   startCampaign,
   syncUnipileAccounts,
@@ -13,7 +14,7 @@ import {
   type AppContext,
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
-import { senderAccounts } from "@/lib/db/schema";
+import { campaigns, senderAccounts, workspaces } from "@/lib/db/schema";
 import { linkedInProfileHref, profileUrlFromLinkedInAccount } from "@/lib/domain/linkedinProfile";
 import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
@@ -192,6 +193,25 @@ describe("linkedin sender roster", () => {
     );
     expect(linkedInProfileHref("http://www.linkedin.com/in/drew-henson")).toBeNull();
     expect(linkedInProfileHref("https://evil.example/in/drew")).toBeNull();
+  });
+
+  it("removes a LinkedIn row and selects the one that remains", async () => {
+    const { ctx } = await testApp();
+    await insertSender(ctx, { id: "snd_a", displayName: "Drew A", unipileAccountId: "acct_a" });
+    await insertSender(ctx, { id: "snd_b", displayName: "Drew B", unipileAccountId: "acct_b" });
+    await updateSettings(ctx, { linkedinSenderId: "snd_a" });
+    const campaign = await createCampaign(ctx, {
+      name: "LI",
+      steps: stepsForTemplate(),
+      linkedinSenderId: "snd_a",
+    });
+    await removeLinkedInAccount(ctx, "snd_a");
+    const rows = await ctx.db.select().from(senderAccounts);
+    expect(rows.map((row) => row.id)).toEqual(["snd_b"]);
+    const [ws] = await ctx.db.select().from(workspaces);
+    expect(ws?.linkedinSenderId).toBe("snd_b");
+    const [saved] = await ctx.db.select().from(campaigns).where(eq(campaigns.id, campaign.id));
+    expect(saved?.linkedinSenderId ?? null).toBeNull();
   });
 
   it("reads the public LinkedIn slug from a Unipile account", () => {

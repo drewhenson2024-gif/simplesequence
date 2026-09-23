@@ -137,6 +137,27 @@ export default function SettingsPage() {
     }
   }
 
+  async function removeAccount(senderId: string, name: string) {
+    if (!window.confirm(`Remove ${name} from Settings? Past sends stay.`)) return;
+    setError(null);
+    setBusy(`remove:${senderId}`);
+    try {
+      const res = await fetch("/api/accounts/linkedin/remove", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ senderId }),
+      });
+      const body = await res.json();
+      if (!res.ok) {
+        setError(typeof body.error === "string" ? body.error : "Could not remove LinkedIn");
+        return;
+      }
+      await refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (!data) {
     return (
       <AppShell>
@@ -228,6 +249,14 @@ export default function SettingsPage() {
                       {busy === `reconnect:${sender.id}` ? "Opening…" : "Reconnect"}
                     </button>
                   ) : null}
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
+                    onClick={() => void removeAccount(sender.id, sender.displayName)}
+                  >
+                    {busy === `remove:${sender.id}` ? "Removing…" : "Remove"}
+                  </button>
                 </div>
               </li>
             );

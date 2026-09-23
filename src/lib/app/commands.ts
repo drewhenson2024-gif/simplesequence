@@ -1188,6 +1188,38 @@ export async function reconnectAccount(ctx: AppContext, senderId: string) {
   return { senderId, authUrl: url, live: true };
 }
 
+export async function removeLinkedInAccount(ctx: AppContext, senderId: string) {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(
+      and(
+        eq(tables.senderAccounts.id, senderId),
+        eq(tables.senderAccounts.workspaceId, ctx.workspaceId),
+        eq(tables.senderAccounts.channel, "linkedin"),
+      ),
+    )
+    .limit(1);
+  if (!sender) throw new CommandError("LinkedIn sender not found", 404);
+  await ctx.db.delete(tables.senderAccounts).where(eq(tables.senderAccounts.id, sender.id));
+  const remaining = await listLinkedInSenders(ctx);
+  const ws = await getWorkspace(ctx);
+  if (ws.linkedinSenderId === sender.id) {
+    await ctx.db
+      .update(tables.workspaces)
+      .set({ linkedinSenderId: pickLinkedInSenderId(remaining, null) })
+      .where(eq(tables.workspaces.id, ctx.workspaceId));
+  }
+  await ctx.db
+    .update(tables.campaigns)
+    .set({ linkedinSenderId: null })
+    .where(
+      and(eq(tables.campaigns.workspaceId, ctx.workspaceId), eq(tables.campaigns.linkedinSenderId, sender.id)),
+    );
+  await audit(ctx, "remove_linkedin_account", { senderId: sender.id });
+  return { removed: sender.id };
+}
+
 export async function syncUnipileAccounts(ctx: AppContext) {
   const accounts = ctx.unipile.listAccounts ? await ctx.unipile.listAccounts() : [];
   const now = iso(ctx.clock.now());
