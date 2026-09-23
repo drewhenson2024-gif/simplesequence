@@ -5,7 +5,8 @@ export function profileUrlFromLinkedInAccount(account: {
 }): string | undefined {
   const im = account.connection_params?.im;
   if (!im || typeof im === "string") return undefined;
-  const slug = (im.publicIdentifier || im.username || "").trim();
+  const extra = im as { public_identifier?: string };
+  const slug = (im.publicIdentifier || extra.public_identifier || im.username || "").trim();
   if (!slug) return undefined;
   if (/^https?:\/\//i.test(slug)) return slug;
   return `https://www.linkedin.com/in/${slug.replace(/^\/+|\/+$/g, "")}`;

@@ -1,4 +1,4 @@
-import { linkedInProfileHref, profileUrlFromLinkedInAccount } from "../domain/linkedinProfile";
+import { profileUrlFromLinkedInAccount } from "../domain/linkedinProfile";
 
 export type UnipileInviteInput = {
   accountId: string;
@@ -212,28 +212,17 @@ export class LiveUnipile implements UnipilePort {
   }
 
   async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string }> {
-    const account = (await this.request(`/api/v1/accounts/${encodeURIComponent(accountId)}`)) as UnipileAccount;
-    let profileUrl = profileUrlFromLinkedInAccount(account);
-    let name = account.name;
-    try {
-      const profile = (await this.request(
-        `/api/v1/users/me?account_id=${encodeURIComponent(accountId)}`,
-      )) as {
-        first_name?: string;
-        last_name?: string;
-        public_profile_url?: string;
-        public_identifier?: string;
-      };
-      const fromMe =
-        profile.public_profile_url ||
-        (profile.public_identifier ? `https://www.linkedin.com/in/${profile.public_identifier}` : undefined);
-      if (linkedInProfileHref(fromMe)) profileUrl = fromMe;
-      const meName = [profile.first_name, profile.last_name].filter(Boolean).join(" ");
-      if (meName) name = meName;
-    } catch {
-      // The account's public identifier is enough for the Settings link.
+    const accounts = await this.listAccounts();
+    const account = accounts.find((row) => row.id === accountId);
+    if (!account) throw new Error("LinkedIn account was not in the Unipile account list");
+    const profileUrl = profileUrlFromLinkedInAccount(account);
+    if (!profileUrl) {
+      const im = account.connection_params?.im;
+      const detail =
+        im && typeof im === "object" ? Object.keys(im).join(",") : im ? "string" : "missing";
+      throw new Error(`no public LinkedIn identifier (${detail})`);
     }
-    return { name, profileUrl };
+    return { name: account.name, profileUrl };
   }
 
   async lookupProfile(input: { profileUrl: string; accountId?: string }): Promise<{
