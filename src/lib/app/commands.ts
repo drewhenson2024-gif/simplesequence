@@ -1195,10 +1195,11 @@ export async function syncUnipileAccounts(ctx: AppContext) {
   for (const account of accounts) {
     const channel = channelFromUnipileAccount(account);
     if (channel !== "linkedin") continue;
+    const im = account.connection_params?.im;
     const display =
       account.name ||
       account.connection_params?.mail ||
-      account.connection_params?.im ||
+      (typeof im === "string" ? im : undefined) ||
       `${channel} ${account.id}`;
     const existing = await ctx.db
       .select()
@@ -1306,8 +1307,9 @@ export async function refreshLinkedInProfiles(ctx: AppContext, opts?: { force?: 
         .update(tables.senderAccounts)
         .set({ profileUrl: href })
         .where(eq(tables.senderAccounts.id, sender.id));
-    } catch {
-      // Leave the row without a link. Settings still loads.
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`LinkedIn profile link failed for ${accountId.slice(-6)}: ${message.slice(0, 180)}`);
     }
   }
 }

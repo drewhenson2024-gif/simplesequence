@@ -14,7 +14,7 @@ import {
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { senderAccounts } from "@/lib/db/schema";
-import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
+import { linkedInProfileHref, profileUrlFromLinkedInAccount } from "@/lib/domain/linkedinProfile";
 import { stepsForTemplate } from "@/lib/domain/templates";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { MockUnipile, type UnipileAccount } from "@/lib/unipile/port";
@@ -192,5 +192,14 @@ describe("linkedin sender roster", () => {
     );
     expect(linkedInProfileHref("http://www.linkedin.com/in/drew-henson")).toBeNull();
     expect(linkedInProfileHref("https://evil.example/in/drew")).toBeNull();
+  });
+
+  it("reads the public LinkedIn slug from a Unipile account", () => {
+    expect(
+      profileUrlFromLinkedInAccount({
+        connection_params: { im: { publicIdentifier: "drew-henson" } },
+      }),
+    ).toBe("https://www.linkedin.com/in/drew-henson");
+    expect(profileUrlFromLinkedInAccount({ connection_params: { im: "not-a-slug" } })).toBeUndefined();
   });
 });

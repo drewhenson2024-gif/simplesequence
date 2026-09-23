@@ -1,3 +1,16 @@
+export function profileUrlFromLinkedInAccount(account: {
+  connection_params?: {
+    im?: string | { publicIdentifier?: string; username?: string };
+  };
+}): string | undefined {
+  const im = account.connection_params?.im;
+  if (!im || typeof im === "string") return undefined;
+  const slug = (im.publicIdentifier || im.username || "").trim();
+  if (!slug) return undefined;
+  if (/^https?:\/\//i.test(slug)) return slug;
+  return `https://www.linkedin.com/in/${slug.replace(/^\/+|\/+$/g, "")}`;
+}
+
 export function linkedInProfileHref(value: string | null | undefined): string | null {
   if (!value) return null;
   let url: URL;
