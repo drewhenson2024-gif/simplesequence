@@ -182,7 +182,6 @@ export default function CampaignDetailPage() {
   }
 
   async function start() {
-    if (!window.confirm("Start sending? This is the explicit start action.")) return;
     if (dirty) await save();
     const res = await fetch(`/api/campaigns/${params.id}/start`, { method: "POST" });
     const body = await res.json();
