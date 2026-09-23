@@ -137,8 +137,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function removeAccount(senderId: string, name: string) {
-    if (!window.confirm(`Remove ${name} from Settings? Past sends stay.`)) return;
+  async function removeAccount(senderId: string) {
     setError(null);
     setBusy(`remove:${senderId}`);
     try {
@@ -253,7 +252,7 @@ export default function SettingsPage() {
                     type="button"
                     disabled={Boolean(busy)}
                     className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
-                    onClick={() => void removeAccount(sender.id, sender.displayName)}
+                    onClick={() => void removeAccount(sender.id)}
                   >
                     {busy === `remove:${sender.id}` ? "Removing…" : "Remove"}
                   </button>
