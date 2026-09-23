@@ -13,6 +13,7 @@ const NAV = [
   { href: "/campaigns", label: "Sequences", icon: SequencesIcon },
   { href: "/inbox", label: "Inbox", icon: InboxIcon },
   { href: "/analytics", label: "Analytics", icon: AnalyticsIcon },
+  { href: "/frequency", label: "Frequency", icon: FrequencyIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -32,6 +33,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ...NAV.slice(0, 4),
     ...(trialOn ? [{ href: "/trials", label: "Trial", icon: TrialIcon }] : []),
     NAV[4]!,
+    NAV[5]!,
   ];
   useEffect(() => {
     void ensurePeopleCache();
@@ -121,6 +123,16 @@ function AnalyticsIcon() {
       <path d="M7 16v-5" />
       <path d="M12 16V8" />
       <path d="M17 16v-3" />
+    </svg>
+  );
+}
+
+function FrequencyIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 12l3-2" />
+      <path d="M12 8v4" />
     </svg>
   );
 }

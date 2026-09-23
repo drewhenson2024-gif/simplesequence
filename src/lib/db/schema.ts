@@ -13,6 +13,8 @@ export const workspaces = sqliteTable("workspaces", {
   killSwitch: integer("kill_switch").notNull().default(0),
   developerTrial: integer("developer_trial").notNull().default(0),
   linkedinSenderId: text("linkedin_sender_id"),
+  connectionCap: integer("connection_cap").notNull().default(25),
+  minGapMinutes: integer("min_gap_minutes").notNull().default(2),
   mcpApiKey: text("mcp_api_key").notNull().default("dev-mcp-key"),
   createdAt: text("created_at").notNull(),
 });

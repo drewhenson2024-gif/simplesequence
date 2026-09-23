@@ -33,7 +33,6 @@ import {
   classifyLinkedInProviderError,
   LINKEDIN_INVITE_DAILY_CAP,
   LINKEDIN_INVITE_ROLLING_MS,
-  LINKEDIN_MIN_GAP_MS,
   nextDailyCheck,
   PROVIDER_RESTRICTION,
   PROVIDER_THROTTLE,
@@ -1720,6 +1719,62 @@ export async function updateSettings(
   return getWorkspace(ctx);
 }
 
+export async function getFrequency(ctx: AppContext) {
+  const ws = await getWorkspace(ctx);
+  const pace = await paceOf(ctx);
+  const senders = await listLinkedInSenders(ctx);
+  const senderId = pickLinkedInSenderId(senders, ws.linkedinSenderId);
+  const sender = senders.find((row) => row.id === senderId) ?? null;
+  const now = ctx.clock.now();
+  const connectionsUsed = sender ? await linkedinInvitesSentToday(ctx, sender.id) : 0;
+  const lastAt = sender ? await lastSenderActionAt(ctx, sender.id) : null;
+  const signal =
+    sender?.status === "restricted"
+      ? ("restricted" as const)
+      : sender?.lastError === PROVIDER_THROTTLE
+        ? ("throttled" as const)
+        : null;
+  return {
+    account: sender
+      ? {
+          id: sender.id,
+          displayName: sender.displayName,
+          profileUrl: sender.profileUrl,
+          status: sender.status,
+          signal,
+        }
+      : null,
+    connectionsUsed,
+    connectionCap: pace.connectionCap,
+    minGapMinutes: pace.minGapMinutes,
+    lastActionLabel: lastAt ? formatWhen(new Date(lastAt), pace.timezone) : null,
+    gapOpen: !lastAt || now.getTime() - lastAt >= pace.minGapMs,
+    nextCheckLabel: formatWhen(nextDailyCheck(now), pace.timezone),
+  };
+}
+
+export async function updateFrequency(
+  ctx: AppContext,
+  input: { connectionCap?: number; minGapMinutes?: number },
+) {
+  const ws = await getWorkspace(ctx);
+  if (input.connectionCap !== undefined && (!Number.isInteger(input.connectionCap) || input.connectionCap < 0 || input.connectionCap > 1000)) {
+    throw new CommandError("connection cap must be a whole number from 0 to 1000", 400);
+  }
+  if (input.minGapMinutes !== undefined && (!Number.isInteger(input.minGapMinutes) || input.minGapMinutes < 0 || input.minGapMinutes > 1440)) {
+    throw new CommandError("gap must be a whole number of minutes from 0 to 1440", 400);
+  }
+  await ctx.db
+    .update(tables.workspaces)
+    .set({
+      connectionCap: input.connectionCap ?? ws.connectionCap,
+      minGapMinutes: input.minGapMinutes ?? ws.minGapMinutes,
+    })
+    .where(eq(tables.workspaces.id, ctx.workspaceId));
+  await audit(ctx, "update_frequency", input);
+  return getFrequency(ctx);
+}
+
 export async function listAudit(ctx: AppContext) {
   return ctx.db.select().from(tables.auditLog).where(eq(tables.auditLog.workspaceId, ctx.workspaceId));
 }
@@ -1765,7 +1820,18 @@ async function jobIsLinkedInInvite(ctx: AppContext, job: { campaignId: string; s
   return steps.find((s) => s.stepIndex === job.stepIndex)?.action === "connection";
 }
 
-async function senderGapOpen(ctx: AppContext, senderId: string): Promise<boolean> {
+async function paceOf(ctx: AppContext) {
+  const ws = await getWorkspace(ctx);
+  const minGapMinutes = ws.minGapMinutes ?? 2;
+  return {
+    connectionCap: ws.connectionCap ?? LINKEDIN_INVITE_DAILY_CAP,
+    minGapMinutes,
+    minGapMs: minGapMinutes * 60 * 1000,
+    timezone: ws.timezone,
+  };
+}
+
+async function lastSenderActionAt(ctx: AppContext, senderId: string): Promise<number | null> {
   const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.senderId, senderId));
   let latest = 0;
   for (const job of jobs) {
@@ -1773,8 +1839,13 @@ async function senderGapOpen(ctx: AppContext, senderId: string): Promise<boolean
     if (job.status !== "sent" && job.status !== "claimed" && job.status !== "in_progress") continue;
     latest = Math.max(latest, new Date(job.claimedAt).getTime());
   }
+  return latest || null;
+}
+
+async function senderGapOpen(ctx: AppContext, senderId: string, minGapMs: number): Promise<boolean> {
+  const latest = await lastSenderActionAt(ctx, senderId);
   if (!latest) return true;
-  return ctx.clock.now().getTime() - latest >= LINKEDIN_MIN_GAP_MS;
+  return ctx.clock.now().getTime() - latest >= minGapMs;
 }
 
 function formatWhen(date: Date, timezone: string): string {
@@ -1796,7 +1867,7 @@ async function accountBudgetFor(
   jobs: { status: string; dueAt: string; action: string | null }[],
 ) {
   const connectionsUsed = await linkedinInvitesSentToday(ctx, senderId);
-  const ws = await getWorkspace(ctx);
+  const pace = await paceOf(ctx);
   let note: string | null = null;
   const next = jobs
     .filter((job) => job.status === "pending")
@@ -1804,19 +1875,19 @@ async function accountBudgetFor(
   if (status === "running" && next && !senderSignal) {
     const due = new Date(next.dueAt);
     const now = ctx.clock.now();
-    if (next.action === "connection" && connectionsUsed >= LINKEDIN_INVITE_DAILY_CAP) {
+    if (next.action === "connection" && connectionsUsed >= pace.connectionCap) {
       note = "The next step is waiting until a connection leaves that window.";
     } else if (due.getTime() > now.getTime()) {
-      note = `The next step is due ${formatWhen(due, ws.timezone)}.`;
-    } else if (!(await senderGapOpen(ctx, senderId))) {
-      note = "The next step is waiting for the 2-minute gap.";
+      note = `The next step is due ${formatWhen(due, pace.timezone)}.`;
+    } else if (!(await senderGapOpen(ctx, senderId, pace.minGapMs))) {
+      note = `The next step is waiting for the ${pace.minGapMinutes}-minute gap.`;
     } else {
-      note = `The next step is waiting on the next check, ${formatWhen(nextDailyCheck(now), ws.timezone)}.`;
+      note = `The next step is waiting on the next check, ${formatWhen(nextDailyCheck(now), pace.timezone)}.`;
     }
   }
   return {
     connectionsUsed,
-    connectionCap: LINKEDIN_INVITE_DAILY_CAP,
+    connectionCap: pace.connectionCap,
     note,
   };
 }
@@ -1850,15 +1921,17 @@ export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boole
     return a.dueAt.localeCompare(b.dueAt);
   });
 
+  const pace = await paceOf(ctx);
+
   let processed = 0;
   const claimedSenders = new Set<string>();
 
   for (const job of due) {
     if (claimedSenders.has(job.senderId) || (await senderHasInFlight(ctx, job.senderId))) continue;
-    if (!(await senderGapOpen(ctx, job.senderId))) continue;
+    if (!(await senderGapOpen(ctx, job.senderId, pace.minGapMs))) continue;
     if (await jobIsLinkedInInvite(ctx, job)) {
       const sentToday = await linkedinInvitesSentToday(ctx, job.senderId);
-      if (sentToday >= LINKEDIN_INVITE_DAILY_CAP) continue;
+      if (sentToday >= pace.connectionCap) continue;
     }
     const [sender] = await ctx.db
       .select()

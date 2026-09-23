@@ -156,6 +156,31 @@ describe("rolling account pace", () => {
     expect(view.accountBudget?.connectionsUsed).toBe(1);
     expect(view.accountBudget?.note).toContain("due");
   });
+
+  it("applies a lower connection cap from Frequency", async () => {
+    const { ctx, advance } = await testApp();
+    const { getFrequency, updateFrequency, getCampaign } = await import("@/lib/app/commands");
+    const list = await importList(
+      ctx,
+      "freq",
+      `${csv("Ada", "ada").trim()}\nGrace,https://www.linkedin.com/in/grace\n`,
+    );
+    const campaign = await createCampaign(ctx, { name: "freq", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx);
+    advance(2 * 60 * 1000);
+    const before = await getFrequency(ctx);
+    expect(before.connectionsUsed).toBe(1);
+    expect(before.connectionCap).toBe(25);
+    expect(before.nextCheckLabel.length).toBeGreaterThan(0);
+    await updateFrequency(ctx, { connectionCap: 1 });
+    expect((await tick(ctx)).processed).toBe(0);
+    const view = await getCampaign(ctx, campaign.id);
+    expect(view.accountBudget?.connectionCap).toBe(1);
+    expect(view.accountBudget?.note).toContain("leaves that window");
+  });
 });
 
 async function importList(ctx: AppContext, name: string, content: string) {
