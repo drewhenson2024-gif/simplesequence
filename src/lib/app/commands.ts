@@ -34,6 +34,7 @@ import {
   LINKEDIN_INVITE_DAILY_CAP,
   LINKEDIN_INVITE_ROLLING_MS,
   LINKEDIN_MIN_GAP_MS,
+  nextDailyCheck,
   PROVIDER_RESTRICTION,
   PROVIDER_THROTTLE,
 } from "../domain/linkedinSafety";
@@ -702,9 +703,13 @@ export async function getCampaign(ctx: AppContext, campaignId: string) {
       : sender?.lastError === PROVIDER_THROTTLE
         ? ("throttled" as const)
         : null;
+  const accountBudget = campaign.linkedinSenderId
+    ? await accountBudgetFor(ctx, campaign.linkedinSenderId, campaign.status, senderSignal, jobRows)
+    : null;
   return {
     ...campaign,
     senderSignal,
+    accountBudget,
     steps,
     enrollments: enrollments.map((e) => ({ ...e, lead: byId.get(e.leadId) ?? null })),
     enrollmentCounts: counts,
@@ -1770,6 +1775,50 @@ async function senderGapOpen(ctx: AppContext, senderId: string): Promise<boolean
   }
   if (!latest) return true;
   return ctx.clock.now().getTime() - latest >= LINKEDIN_MIN_GAP_MS;
+}
+
+function formatWhen(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+async function accountBudgetFor(
+  ctx: AppContext,
+  senderId: string,
+  status: string,
+  senderSignal: "throttled" | "restricted" | null,
+  jobs: { status: string; dueAt: string; action: string | null }[],
+) {
+  const connectionsUsed = await linkedinInvitesSentToday(ctx, senderId);
+  const ws = await getWorkspace(ctx);
+  let note: string | null = null;
+  const next = jobs
+    .filter((job) => job.status === "pending")
+    .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
+  if (status === "running" && next && !senderSignal) {
+    const due = new Date(next.dueAt);
+    const now = ctx.clock.now();
+    if (next.action === "connection" && connectionsUsed >= LINKEDIN_INVITE_DAILY_CAP) {
+      note = "The next step is waiting until a connection leaves that window.";
+    } else if (due.getTime() > now.getTime()) {
+      note = `The next step is due ${formatWhen(due, ws.timezone)}.`;
+    } else if (!(await senderGapOpen(ctx, senderId))) {
+      note = "The next step is waiting for the 2-minute gap.";
+    } else {
+      note = `The next step is waiting on the next check, ${formatWhen(nextDailyCheck(now), ws.timezone)}.`;
+    }
+  }
+  return {
+    connectionsUsed,
+    connectionCap: LINKEDIN_INVITE_DAILY_CAP,
+    note,
+  };
 }
 
 export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boolean }): Promise<{ processed: number }> {

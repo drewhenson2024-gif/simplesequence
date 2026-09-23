@@ -108,12 +108,53 @@ describe("rolling account pace", () => {
       });
     }
     advance(20 * 60 * 1000);
+    const { getCampaign } = await import("@/lib/app/commands");
+    const full = await getCampaign(ctx, campaign.id);
+    expect(full.accountBudget?.connectionsUsed).toBe(25);
+    expect(full.accountBudget?.note).toContain("leaves that window");
     expect((await tick(ctx)).processed).toBe(0);
     await ctx.db
       .update(sendJobs)
       .set({ claimedAt: new Date(ctx.clock.now().getTime() - 25 * 60 * 60 * 1000).toISOString() })
       .where(eq(sendJobs.id, "job_cap_0"));
     expect((await tick(ctx)).processed).toBe(1);
+  });
+
+  it("shows the account budget and why the next step is waiting", async () => {
+    const { ctx, advance } = await testApp();
+    const { getCampaign } = await import("@/lib/app/commands");
+    const list = await importList(
+      ctx,
+      "budget-view",
+      `${csv("Ada", "ada").trim()}\nGrace,https://www.linkedin.com/in/grace\n`,
+    );
+    const campaign = await createCampaign(ctx, { name: "budget view", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx);
+    const duringGap = await getCampaign(ctx, campaign.id);
+    expect(duringGap.accountBudget?.connectionsUsed).toBe(1);
+    expect(duringGap.accountBudget?.connectionCap).toBe(25);
+    expect(duringGap.accountBudget?.note).toContain("2-minute gap");
+    advance(2 * 60 * 1000);
+    const waitingOnCheck = await getCampaign(ctx, campaign.id);
+    expect(waitingOnCheck.accountBudget?.note).toContain("next check");
+  });
+
+  it("says the next step is due when its time has not arrived", async () => {
+    const { ctx, advance } = await testApp();
+    const { getCampaign } = await import("@/lib/app/commands");
+    const list = await importList(ctx, "due-view", csv("Ada", "ada"));
+    const campaign = await createCampaign(ctx, { name: "due view", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list });
+    await startCampaign(ctx, campaign.id);
+    advance(20 * 60 * 1000);
+    await tick(ctx);
+    advance(2 * 60 * 1000);
+    const view = await getCampaign(ctx, campaign.id);
+    expect(view.accountBudget?.connectionsUsed).toBe(1);
+    expect(view.accountBudget?.note).toContain("due");
   });
 });
 

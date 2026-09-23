@@ -35,6 +35,11 @@ type Campaign = {
   enrollmentCounts: Record<string, number>;
   jobCounts: Record<string, number>;
   senderSignal?: "throttled" | "restricted" | null;
+  accountBudget?: {
+    connectionsUsed: number;
+    connectionCap: number;
+    note: string | null;
+  } | null;
   jobs?: Array<{
     id: string;
     enrollmentId: string;
@@ -407,6 +412,7 @@ export default function CampaignDetailPage() {
             status={data.status}
             createdAt={data.createdAt}
             senderSignal={data.senderSignal}
+            accountBudget={data.accountBudget}
             steps={steps}
             enrollments={data.enrollments}
             enrollmentCounts={data.enrollmentCounts}

@@ -75,6 +75,7 @@ export function SequenceReport({
   status,
   createdAt,
   senderSignal,
+  accountBudget,
   steps,
   enrollments,
   enrollmentCounts,
@@ -89,6 +90,11 @@ export function SequenceReport({
   status: string;
   createdAt?: string;
   senderSignal?: "throttled" | "restricted" | null;
+  accountBudget?: {
+    connectionsUsed: number;
+    connectionCap: number;
+    note: string | null;
+  } | null;
   steps: Step[];
   enrollments: Enrollment[];
   enrollmentCounts: Record<string, number>;
@@ -136,6 +142,13 @@ export function SequenceReport({
               </div>
             ))}
           </div>
+          {accountBudget ? (
+            <p className="mt-3 text-sm text-(--muted)">
+              {accountBudget.connectionsUsed} of {accountBudget.connectionCap} connection requests in the last 24
+              hours.
+              {accountBudget.note ? ` ${accountBudget.note}` : ""}
+            </p>
+          ) : null}
         </section>
 
         <section className="mt-8">
