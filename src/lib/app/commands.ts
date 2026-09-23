@@ -27,12 +27,13 @@ import {
   type JobStatus,
   type SenderStatus,
 } from "../domain/fsm";
-import { addJitter, inWorkingHours, nextWorkingSlot, type WorkingHours } from "../domain/jitter";
+import { addJitter, type WorkingHours } from "../domain/jitter";
 import { linkedInProfileHref } from "../domain/linkedinProfile";
 import {
-  calendarDay,
   classifyLinkedInProviderError,
   LINKEDIN_INVITE_DAILY_CAP,
+  LINKEDIN_INVITE_ROLLING_MS,
+  LINKEDIN_MIN_GAP_MS,
   PROVIDER_RESTRICTION,
   PROVIDER_THROTTLE,
 } from "../domain/linkedinSafety";
@@ -500,6 +501,7 @@ export async function updateCampaign(
     name?: string;
     steps?: SequenceStepDraft[];
     linkedinSenderId?: string | null;
+    priority?: number;
   },
 ) {
   const [campaign] = await ctx.db
@@ -508,6 +510,18 @@ export async function updateCampaign(
     .where(eq(tables.campaigns.id, campaignId))
     .limit(1);
   if (!campaign) throw new CommandError("campaign not found", 404);
+  if (input.priority !== undefined) {
+    await ctx.db
+      .update(tables.campaigns)
+      .set({ priority: input.priority })
+      .where(eq(tables.campaigns.id, campaignId));
+  }
+  const editsDraft =
+    input.name !== undefined || input.steps !== undefined || input.linkedinSenderId !== undefined;
+  if (!editsDraft && input.priority !== undefined) {
+    await audit(ctx, "update_campaign", { campaignId, priority: input.priority });
+    return getCampaign(ctx, campaignId);
+  }
   if (campaign.status !== "draft") throw new CommandError("only drafts can be edited", 409);
   rejectRemovedSteps(input.steps);
   await ctx.db
@@ -1062,12 +1076,9 @@ async function scheduleStep(
   if (!senderId) return;
   const jobId = newId("job");
   const skipNow = Boolean(missingChannelReason(step, input.lead));
-  const due = nextWorkingSlot(
-    addJitter(
-      skipNow ? input.from : new Date(input.from.getTime() + step.delayHours * 3600 * 1000),
-      jobId,
-    ),
-    input.working,
+  const due = addJitter(
+    skipNow ? input.from : new Date(input.from.getTime() + step.delayHours * 3600 * 1000),
+    jobId,
   );
   const key = `${input.enrollmentId}:${step.stepIndex}`;
   const existing = await ctx.db
@@ -1722,12 +1733,13 @@ async function senderHasInFlight(ctx: AppContext, senderId: string): Promise<boo
   return Boolean(rows[0]);
 }
 
-async function linkedinInvitesSentToday(ctx: AppContext, senderId: string, timezone: string): Promise<number> {
-  const today = calendarDay(ctx.clock.now(), timezone);
+async function linkedinInvitesSentToday(ctx: AppContext, senderId: string): Promise<number> {
+  const since = ctx.clock.now().getTime() - LINKEDIN_INVITE_ROLLING_MS;
   const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.senderId, senderId));
-  const sent = jobs.filter(
-    (job) => job.status === "sent" && job.claimedAt && calendarDay(new Date(job.claimedAt), timezone) === today,
-  );
+  const sent = jobs.filter((job) => {
+    if (job.status !== "sent" || !job.claimedAt) return false;
+    return new Date(job.claimedAt).getTime() >= since;
+  });
   if (sent.length === 0) return 0;
   const campaignIds = [...new Set(sent.map((job) => job.campaignId))];
   const steps = await ctx.db
@@ -1748,7 +1760,19 @@ async function jobIsLinkedInInvite(ctx: AppContext, job: { campaignId: string; s
   return steps.find((s) => s.stepIndex === job.stepIndex)?.action === "connection";
 }
 
-export async function tick(ctx: AppContext, opts?: { ignoreWorkingHours?: boolean }): Promise<{ processed: number }> {
+async function senderGapOpen(ctx: AppContext, senderId: string): Promise<boolean> {
+  const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.senderId, senderId));
+  let latest = 0;
+  for (const job of jobs) {
+    if (!job.claimedAt) continue;
+    if (job.status !== "sent" && job.status !== "claimed" && job.status !== "in_progress") continue;
+    latest = Math.max(latest, new Date(job.claimedAt).getTime());
+  }
+  if (!latest) return true;
+  return ctx.clock.now().getTime() - latest >= LINKEDIN_MIN_GAP_MS;
+}
+
+export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boolean }): Promise<{ processed: number }> {
   const ws = await getWorkspace(ctx);
   const now = ctx.clock.now();
   if (ws.killSwitch) return { processed: 0 };
@@ -1765,19 +1789,26 @@ export async function tick(ctx: AppContext, opts?: { ignoreWorkingHours?: boolea
     .select()
     .from(tables.sendJobs)
     .where(and(eq(tables.sendJobs.status, "pending"), lte(tables.sendJobs.dueAt, iso(now))));
-  due.sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+  const campaignIds = [...new Set(due.map((job) => job.campaignId))];
+  const campaignRows =
+    campaignIds.length === 0
+      ? []
+      : await ctx.db.select().from(tables.campaigns).where(inArray(tables.campaigns.id, campaignIds));
+  const priorityOf = new Map(campaignRows.map((row) => [row.id, row.priority ?? 0]));
+  due.sort((a, b) => {
+    const rank = (priorityOf.get(b.campaignId) ?? 0) - (priorityOf.get(a.campaignId) ?? 0);
+    if (rank !== 0) return rank;
+    return a.dueAt.localeCompare(b.dueAt);
+  });
 
   let processed = 0;
   const claimedSenders = new Set<string>();
-  const working = hoursOf(ws);
-  if (!opts?.ignoreWorkingHours && !inWorkingHours(now, working)) {
-    return { processed: 0 };
-  }
 
   for (const job of due) {
     if (claimedSenders.has(job.senderId) || (await senderHasInFlight(ctx, job.senderId))) continue;
+    if (!(await senderGapOpen(ctx, job.senderId))) continue;
     if (await jobIsLinkedInInvite(ctx, job)) {
-      const sentToday = await linkedinInvitesSentToday(ctx, job.senderId, working.timezone);
+      const sentToday = await linkedinInvitesSentToday(ctx, job.senderId);
       if (sentToday >= LINKEDIN_INVITE_DAILY_CAP) continue;
     }
     const [sender] = await ctx.db
@@ -1962,8 +1993,7 @@ async function executeJob(ctx: AppContext, jobId: string) {
     const message = err instanceof Error ? err.message : "send failed";
     const signal = classifyLinkedInProviderError(message);
     if (signal === "quota") {
-      const ws = await getWorkspace(ctx);
-      const due = nextWorkingSlot(new Date(ctx.clock.now().getTime() + 24 * 60 * 60 * 1000), hoursOf(ws));
+      const due = new Date(ctx.clock.now().getTime() + LINKEDIN_INVITE_ROLLING_MS);
       await parkJob(ctx, jobId, enrollment.id, due, "invite limit");
       await audit(ctx, "invite_quota", { jobId, senderId: job.senderId });
       return;

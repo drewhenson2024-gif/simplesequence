@@ -306,9 +306,9 @@ export default function SettingsPage() {
             />
           </div>
           <p className="py-4 text-sm text-(--muted)">
-            LinkedIn connection requests cap at {LINKEDIN_INVITE_DAILY_CAP} per sender per day, with working hours, jitter,
-            and one in-flight send. That follows Unipile’s conservative pace — LinkedIn can still
-            restrict an account.
+            LinkedIn connection requests cap at {LINKEDIN_INVITE_DAILY_CAP} per account across the last 24 hours,
+            including nights and weekends. A short gap between actions stops a burst, and a higher-priority
+            sequence takes the next slot. LinkedIn can still restrict an account.
           </p>
           <div className="flex flex-wrap items-center justify-between gap-4 py-4 last:pb-0">
             <div>

@@ -1,5 +1,8 @@
 /** Conservative Unipile/LinkedIn invite pace for a standard account. Not a guarantee against restriction. */
 export const LINKEDIN_INVITE_DAILY_CAP = 25;
+export const LINKEDIN_INVITE_ROLLING_MS = 24 * 60 * 60 * 1000;
+/** Floor between actions on one account so a tick cannot burst. */
+export const LINKEDIN_MIN_GAP_MS = 2 * 60 * 1000;
 
 export const PROVIDER_THROTTLE = "provider_throttle";
 export const PROVIDER_RESTRICTION = "provider_restriction";

@@ -119,6 +119,7 @@ const updateSequenceSchema = z.object({
   sequence_id: z.string(),
   name: z.string().optional(),
   linkedin_sender_id: z.string().nullable().optional(),
+  priority: z.number().int().optional(),
   steps: stepsSchema,
 });
 
@@ -205,12 +206,16 @@ export const MCP_TOOLS = [
   {
     name: "update_sequence",
     description:
-      "Save a draft sequence (name or full steps list). Same as Save changes. Running sequences cannot be edited. Never sends.",
+      "Save a draft sequence (name or full steps list). Same as Save changes. Running sequences cannot be edited, except priority, which decides who sends when the account has one slot. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
         sequence_id: { type: "string" },
         name: { type: "string" },
+        priority: {
+          type: "number",
+          description: "Higher sends first when several sequences are due. Allowed on a running sequence.",
+        },
         steps: {
           type: "array",
           description: "Replace every stage. Omit a stage to remove it; insert in the list to add one.",
@@ -397,6 +402,7 @@ export async function callMcpTool(
       return updateCampaign(ctx, input.sequence_id, {
         name: input.name,
         linkedinSenderId: input.linkedin_sender_id,
+        priority: input.priority,
         steps: input.steps?.map((s) => ({
           ...s,
           subjectTemplate: s.subjectTemplate ?? null,

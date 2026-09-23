@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS campaigns (
   status TEXT NOT NULL,
   template_key TEXT,
   linkedin_sender_id TEXT,
+  priority INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sequence_steps (
@@ -225,7 +226,7 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 async function readSchemaVersion(client: Client): Promise<number> {
   try {
@@ -254,6 +255,7 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE workspaces ADD COLUMN developer_trial INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE workspaces ADD COLUMN linkedin_sender_id TEXT",
     "ALTER TABLE sender_accounts ADD COLUMN profile_url TEXT",
+    "ALTER TABLE campaigns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
   ]) {
     try {
       await client.execute(sql);

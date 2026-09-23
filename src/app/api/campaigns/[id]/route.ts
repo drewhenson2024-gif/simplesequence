@@ -18,6 +18,7 @@ const stepSchema = z.object({
 const schema = z.object({
   name: z.string().optional(),
   linkedinSenderId: z.string().nullable().optional(),
+  priority: z.number().int().optional(),
   steps: z.array(stepSchema).optional(),
 });
 
@@ -33,6 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return updateCampaign(await getRuntime(), id, {
       name: input.name,
       linkedinSenderId: input.linkedinSenderId,
+      priority: input.priority,
       steps: input.steps?.map((step) => ({
         ...step,
         subjectTemplate: step.subjectTemplate ?? null,

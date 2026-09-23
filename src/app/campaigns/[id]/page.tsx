@@ -14,6 +14,7 @@ type Campaign = {
   id: string;
   name: string;
   status: string;
+  priority?: number;
   createdAt?: string;
   steps: Array<{
     stepIndex: number;
@@ -140,6 +141,21 @@ export default function CampaignDetailPage() {
   const durationHours = steps.reduce((sum, step) => sum + step.delayHours, 0);
   const durationLabel =
     durationHours >= 24 && durationHours % 24 === 0 ? `${durationHours / 24} days` : `${durationHours} hours`;
+
+  async function savePriority(priority: number) {
+    setError(null);
+    const res = await fetch(`/api/campaigns/${params.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ priority }),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setError(body.error);
+      return;
+    }
+    applyCampaign(body, false);
+  }
 
   async function save() {
     if (!editable) return;
@@ -272,6 +288,21 @@ export default function CampaignDetailPage() {
           <p className="mt-2 text-sm text-(--muted)">
             {steps.length} stages · {durationLabel} · {data.enrollments.length} people
           </p>
+          <label className="mt-3 flex flex-wrap items-center gap-2 text-sm text-(--muted)">
+            Priority
+            <input
+              key={data.priority ?? 0}
+              type="number"
+              className="w-20 rounded-md border border-(--line) bg-(--paper) px-2 py-1 text-(--ink)"
+              defaultValue={data.priority ?? 0}
+              onBlur={(e) => {
+                const next = Number(e.target.value);
+                if (!Number.isInteger(next) || next === (data.priority ?? 0)) return;
+                void savePriority(next);
+              }}
+            />
+            Higher sends first when the account has a slot.
+          </label>
         </div>
         <div className="flex flex-wrap gap-2">
           {editable ? (

@@ -80,6 +80,7 @@ export const campaigns = sqliteTable("campaigns", {
   status: text("status").notNull(),
   templateKey: text("template_key"),
   linkedinSenderId: text("linkedin_sender_id"),
+  priority: integer("priority").notNull().default(0),
   createdAt: text("created_at").notNull(),
 });
 
