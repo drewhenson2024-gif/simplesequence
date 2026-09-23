@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { UndoBar } from "@/components/UndoBar";
 import { ensurePeopleCache } from "@/lib/client/peopleCache";
 import { ensureSequencesCache } from "@/lib/client/sequencesCache";
-import { ensureAnalyticsCache, ensureInboxCache, ensureSettingsCache, useSettings } from "@/lib/client/tabCaches";
+import { ensureAnalyticsCache, ensureInboxCache, ensureSettingsCache } from "@/lib/client/tabCaches";
 
 const NAV = [
   { href: "/lists", label: "People", icon: PeopleIcon },
@@ -27,14 +27,7 @@ export function BackLink({ href, label }: { href: string; label: string }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
-  const { data } = useSettings();
-  const trialOn = Boolean(data?.settings?.developerTrial ?? data?.settings?.workspace?.developerTrial);
-  const items = [
-    ...NAV.slice(0, 4),
-    ...(trialOn ? [{ href: "/trials", label: "Trial", icon: TrialIcon }] : []),
-    NAV[4]!,
-    NAV[5]!,
-  ];
+  const items = NAV;
   useEffect(() => {
     void ensurePeopleCache();
     void ensureSequencesCache();
@@ -142,15 +135,6 @@ function SettingsIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-    </svg>
-  );
-}
-
-function TrialIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
-      <path d="M10 2v7.31a3 3 0 0 1-.88 2.12L4 16.55A2 2 0 0 0 5.41 20h13.18A2 2 0 0 0 20 16.55l-5.12-5.12A3 3 0 0 1 14 9.31V2" />
-      <path d="M8 2h8" />
     </svg>
   );
 }

@@ -339,8 +339,7 @@ export default function SettingsPage() {
           <div>
             <p className="font-medium">Developer trial</p>
             <p className="mt-1 max-w-lg text-sm text-(--muted)">
-              On = Trial appears in the sidebar. Pace LinkedIn actions and keep a history of each
-              run. Does not create LinkedIn accounts.
+              On opens the trial sender. It stays out of the sidebar. Off stops a trial that is running.
             </p>
           </div>
           <Toggle
