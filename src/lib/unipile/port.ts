@@ -157,15 +157,21 @@ export class LiveUnipile implements UnipilePort {
   }
 
   private async request(path: string, init?: RequestInit): Promise<unknown> {
-    const res = await fetch(`${this.base()}${path}`, {
-      ...init,
-      headers: {
-        accept: "application/json",
-        "X-API-KEY": this.apiKey,
-        ...(init?.body ? { "content-type": "application/json" } : {}),
-        ...init?.headers,
-      },
-    });
+    const headers = {
+      accept: "application/json",
+      "X-API-KEY": this.apiKey,
+      ...(init?.body ? { "content-type": "application/json" } : {}),
+      ...init?.headers,
+    };
+    let url = `${this.base()}${path}`;
+    let res = await fetch(url, { ...init, headers, redirect: "manual" });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get("location");
+      if (location) {
+        url = new URL(location, url).toString();
+        res = await fetch(url, { ...init, headers, redirect: "manual" });
+      }
+    }
     const text = await res.text();
     let body: unknown = null;
     if (text) {
