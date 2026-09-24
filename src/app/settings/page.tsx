@@ -299,7 +299,7 @@ export default function SettingsPage() {
             <div>
               <p className="font-medium">Sandbox</p>
               <p className="mt-1 max-w-lg text-sm text-(--muted)">
-                Practice mode. Nothing is sent. Turn this off when you want live LinkedIn sends.
+                When this is on, nothing is sent. Turn it off when you want live LinkedIn sends.
               </p>
             </div>
             <Toggle
