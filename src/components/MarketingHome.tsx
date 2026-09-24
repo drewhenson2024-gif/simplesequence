@@ -155,26 +155,17 @@ function FeatureExample({ id }: { id: FeatureId }) {
   );
 }
 
-function AppChrome({ active, children }: { active: string; children: ReactNode }) {
+function AppChrome({ children }: { children: ReactNode }) {
   return (
     <div className="overflow-hidden rounded-xl border border-(--line) bg-(--panel)">
-      <div className="flex">
-        <div className="flex w-12 shrink-0 flex-col items-center gap-3 border-r border-(--line) py-3 text-[10px] text-(--muted)">
-          {["People", "Sequences", "Inbox", "Analytics", "Settings"].map((label) => (
-            <span key={label} className={label === active ? "text-(--ochre)" : ""}>
-              {label.slice(0, 1)}
-            </span>
-          ))}
-        </div>
-        <div className="min-w-0 flex-1 p-4">{children}</div>
-      </div>
+      <div className="min-w-0 p-4">{children}</div>
     </div>
   );
 }
 
 function AnalyticsExample() {
   return (
-    <AppChrome active="Analytics">
+    <AppChrome>
       <h3 className="text-2xl">Analytics</h3>
       <p className="mt-1 text-sm text-(--muted)">Sample numbers. A live board stays at zero until a sequence sends.</p>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -203,7 +194,7 @@ function AnalyticsExample() {
 
 function PeopleExample() {
   return (
-    <AppChrome active="People">
+    <AppChrome>
       <h3 className="text-2xl">People</h3>
       <p className="mt-2 rounded-xl border border-(--line) bg-(--input) px-4 py-3 font-mono text-sm text-(--muted)">
         https://www.linkedin.com/in/priya-rao

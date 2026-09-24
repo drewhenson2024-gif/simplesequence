@@ -8,7 +8,7 @@ import { StatusBadge, Toggle } from "@/components/Toggle";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 import { cursorMcpInstallHref, mcpClientConfigJson } from "@/lib/domain/mcpInstall";
 import { useSettings, type SettingsSnapshot } from "@/lib/client/tabCaches";
-import { formatWhen, statusLabel } from "@/lib/ui/display";
+import { activityLabel, formatWhen, timezoneLabel } from "@/lib/ui/display";
 
 type Sender = {
   id: string;
@@ -214,7 +214,7 @@ export default function SettingsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{sender.displayName}</p>
                     <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
-                    {selected ? <span className="text-xs font-medium uppercase tracking-wide text-(--ochre)">Selected</span> : null}
+                    {selected ? <span className="text-xs font-medium text-(--ochre)">Selected</span> : null}
                   </div>
                   {profileHref ? (
                     <a
@@ -293,13 +293,13 @@ export default function SettingsPage() {
 
       <section className="mt-8 rounded-2xl border border-(--line) bg-(--panel) p-5">
         <h2 className="text-xl">Safety</h2>
-        <p className="mt-1 text-sm text-(--muted)">Timezone: {data.workspace?.timezone}</p>
+        <p className="mt-1 text-sm text-(--muted)">Times use {timezoneLabel(data.workspace?.timezone)}.</p>
         <div className="mt-4 divide-y divide-(--line)">
           <div className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0">
             <div>
               <p className="font-medium">Sandbox</p>
               <p className="mt-1 max-w-lg text-sm text-(--muted)">
-                On = practice. Nothing is actually sent. Turn this off only when you want live send.
+                Practice mode. Nothing is sent. Turn this off when you want live LinkedIn sends.
               </p>
             </div>
             <Toggle
@@ -315,9 +315,9 @@ export default function SettingsPage() {
           </p>
           <div className="flex flex-wrap items-center justify-between gap-4 py-4 last:pb-0">
             <div>
-              <p className="font-medium">Kill switch</p>
+              <p className="font-medium">Stop all sending</p>
               <p className="mt-1 max-w-lg text-sm text-(--muted)">
-                Stops every running sequence immediately. Leave this off unless you need a hard stop.
+                Stops every running sequence immediately. Leave this off unless you need everything to halt.
               </p>
             </div>
             <Toggle
@@ -337,7 +337,7 @@ export default function SettingsPage() {
           Add SimpleSequence in Cursor. Your agent can import LinkedIn URLs, draft a sequence, start it, and read the inbox. Import never sends on its own. Connecting LinkedIn stays on this page.
         </p>
         <p className="mt-4 text-sm text-(--muted)">API key</p>
-        <p className="mt-1 break-all rounded-lg border border-(--line) bg-(--input) px-3 py-2 font-mono text-sm">{data.workspace?.mcpApiKey}</p>
+        <p className="mt-1 rounded-lg border border-(--line) bg-(--input) px-3 py-2 font-mono text-sm tracking-wider">••••••••••••</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -408,7 +408,7 @@ export default function SettingsPage() {
               .reverse()
               .map((row) => (
                 <li key={row.id} className="flex items-baseline justify-between gap-4 border-b border-(--line) py-2 last:border-0">
-                  <span>{statusLabel(row.action)}</span>
+                  <span>{activityLabel(row.action)}</span>
                   <span className="shrink-0 text-(--muted)">{formatWhen(row.createdAt)}</span>
                 </li>
               ))}

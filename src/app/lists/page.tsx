@@ -107,7 +107,7 @@ export default function ListsPage() {
           ) : null}
           {result ? <p className="mt-3 text-sm text-(--muted)">{result}</p> : null}
         </div>
-        <div>
+        <div className="rounded-2xl border border-(--line) bg-(--panel) p-5">
           <h2 className="text-lg">Your lists</h2>
           {!loaded ? (
             <p className="mt-3 text-sm text-(--muted)">Loading…</p>
