@@ -50,7 +50,7 @@ export function StatusBadge({
         : tone === "wait"
           ? "border border-(--ochre) text-(--ochre)"
           : "border border-(--line) text-(--muted)";
-  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide ${cls}`}>{children}</span>;
+  return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>{children}</span>;
 }
 
 export function SoonBadge() {

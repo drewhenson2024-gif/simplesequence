@@ -37,15 +37,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
   return (
     <div className="app flex min-h-screen">
-      <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center border-r border-(--line) bg-(--paper) py-3">
-        <Link
-          href="/"
-          title="SimpleSequence"
-          className="mb-4 inline-flex h-8 w-8 items-center justify-center rounded-full bg-(--ochre) text-xs font-medium text-white"
-        >
-          S
+      <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center border-r border-(--line) bg-(--paper) py-3 md:w-56 md:items-stretch md:px-3 md:py-4">
+        <Link href="/" title="SimpleSequence" className="mb-4 flex items-center gap-2 md:mb-6 md:px-2">
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-(--ochre) text-xs font-medium text-white">
+            S
+          </span>
+          <span className="hidden text-sm font-medium md:inline">SimpleSequence</span>
         </Link>
-        <nav className="flex flex-1 flex-col items-center gap-1">
+        <nav className="flex flex-1 flex-col items-center gap-1 md:items-stretch">
           {items.map((item) => {
             const active = path === item.href || path.startsWith(`${item.href}/`);
             const Icon = item.icon;
@@ -55,19 +54,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                 href={item.href}
                 title={item.label}
                 aria-current={active ? "page" : undefined}
-                className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm md:h-auto md:w-auto md:justify-start md:gap-3 md:px-2 md:py-2 ${
                   active ? "bg-(--input) text-(--ochre)" : "text-(--muted) hover:bg-(--input) hover:text-(--ink)"
                 }`}
               >
                 <Icon />
-                <span className="sr-only">{item.label}</span>
+                <span className="sr-only md:hidden">{item.label}</span>
+                <span className="hidden md:inline">{item.label}</span>
               </Link>
             );
           })}
         </nav>
       </aside>
       <div className="min-w-0 flex-1">
-        <main className="px-8 py-6">
+        <main className="mx-auto max-w-6xl px-5 py-6 md:px-8 md:py-8">
           <UndoBar />
           {children}
         </main>

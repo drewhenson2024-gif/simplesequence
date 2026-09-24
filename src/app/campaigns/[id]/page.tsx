@@ -6,6 +6,7 @@ import { AppShell, BackLink } from "@/components/AppShell";
 import { SequenceEditor, type EditorStep, type PreviewLead } from "@/components/SequenceEditor";
 import { SequenceReport } from "@/components/SequenceReport";
 import { StatusBadge } from "@/components/Toggle";
+import { statusLabel } from "@/lib/ui/display";
 import { scheduleDelete } from "@/lib/client/pendingDelete";
 import { usePeopleLists } from "@/lib/client/peopleCache";
 import { refreshSequence, setSequenceDetail, useSequenceDetail } from "@/lib/client/sequencesCache";
@@ -275,7 +276,7 @@ export default function CampaignDetailPage() {
                       : "muted"
               }
             >
-              {data.status}
+              {statusLabel(data.status)}
             </StatusBadge>
           </p>
           {editable ? (
@@ -306,7 +307,7 @@ export default function CampaignDetailPage() {
                 void savePriority(next);
               }}
             />
-            Higher sends first when the account has a slot.
+            A higher number sends first when there is a free slot.
           </label>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -331,7 +332,7 @@ export default function CampaignDetailPage() {
             </button>
           ) : null}
           {data.status === "draft" ? (
-            <button type="button" onClick={deleteDraft} className={`btn-danger ${ACTION_BTN}`}>
+            <button type="button" onClick={deleteDraft} className={`btn-quiet-danger ${ACTION_BTN}`}>
               Delete draft
             </button>
           ) : null}
@@ -346,7 +347,7 @@ export default function CampaignDetailPage() {
         </p>
       ) : null}
       {data.status === "draft" ? (
-        <p className="mt-3 text-sm text-(--muted)">This is a draft — nothing is sent until you hit Start.</p>
+        <p className="mt-3 text-sm text-(--muted)">This is a draft. Nothing sends until you press Start.</p>
       ) : null}
       {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
 

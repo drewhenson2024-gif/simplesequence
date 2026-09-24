@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { SoonBadge, StatusBadge } from "@/components/Toggle";
+import { formatWhen, statusLabel } from "@/lib/ui/display";
 import { useAnalytics } from "@/lib/client/tabCaches";
 import type { PreviewLead } from "@/components/SequenceEditor";
 
@@ -211,7 +212,7 @@ export function SequenceReport({
           <div className="mt-2 flex flex-wrap gap-3 text-sm text-(--muted)">
             {Object.entries(enrollmentCounts).map(([key, n]) => (
               <span key={key}>
-                {key}: {n}
+                {statusLabel(key)}: {n}
               </span>
             ))}
           </div>
@@ -240,7 +241,7 @@ export function SequenceReport({
                       <td className="px-4 py-2">{row.lead?.fullName ?? row.id}</td>
                       <td className="px-4 py-2">{row.lead?.title || "—"}</td>
                       <td className="px-4 py-2">{row.lead?.company || "—"}</td>
-                      <td className="px-4 py-2">{row.status}</td>
+                      <td className="px-4 py-2">{statusLabel(row.status)}</td>
                       <td className="px-4 py-2">{row.nextStepIndex + 1}</td>
                       <td className="px-4 py-2">
                         {row.status !== "stopped" && row.status !== "replied" && row.status !== "completed" ? (
@@ -273,20 +274,22 @@ export function SequenceReport({
                 }`}
                 onClick={() => onOutboxFilter(key)}
               >
-                {key}
+                {statusLabel(key)}
               </button>
             ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-3 text-sm text-(--muted)">
             {Object.entries(jobCounts).map(([key, n]) => (
               <span key={key}>
-                {key}: {n}
+                {statusLabel(key)}: {n}
               </span>
             ))}
           </div>
           <ul className="mt-3 space-y-2 text-sm">
             {jobs.length === 0 ? (
-              <li className="text-(--muted)">No jobs yet. Start the sequence to queue sends.</li>
+              <li className="rounded-xl border border-dashed border-(--line) px-4 py-6 text-(--muted)">
+                Nothing queued yet. Start the sequence to line up sends.
+              </li>
             ) : (
               jobs.filter((job) => jobFilterMatch(job.status)).map((job) => {
                 const reason = skipLabel(job.skipReason ?? job.error);
@@ -294,20 +297,20 @@ export function SequenceReport({
                   <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-(--line) px-3 py-2">
                     <div>
                       <p>
-                        {job.lead?.fullName ?? "Lead"} · step {job.stepIndex + 1}
-                        {job.action ? ` · ${job.action}` : ""}
+                        {job.lead?.fullName ?? "Person"} · step {job.stepIndex + 1}
+                        {job.action ? ` · ${stepTitle(job.action)}` : ""}
                       </p>
                       <p className="text-(--muted)">
-                        {job.dueAt}
-                        {job.dryRun ? " · dry-run" : ""}
+                        {formatWhen(job.dueAt)}
+                        {job.dryRun ? " · Sandbox" : ""}
                         {reason ? ` · ${reason}` : ""}
                       </p>
                     </div>
                     <span className="flex items-center gap-3">
-                      <StatusBadge tone={jobTone(job.status)}>{job.status}</StatusBadge>
+                      <StatusBadge tone={jobTone(job.status)}>{statusLabel(job.status)}</StatusBadge>
                       {job.status === "pending" || job.status === "claimed" || job.status === "in_progress" ? (
                         <button type="button" className="text-sm text-(--danger)" onClick={() => onStop(job.enrollmentId)}>
-                          Stop lead
+                          Stop
                         </button>
                       ) : null}
                     </span>
@@ -325,11 +328,11 @@ export function SequenceReport({
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-(--muted)">Status</dt>
-              <dd>{status}</dd>
+              <dd>{statusLabel(status)}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-(--muted)">Created</dt>
-              <dd>{createdAt ? createdAt.slice(0, 10) : "—"}</dd>
+              <dd>{createdAt ? formatWhen(createdAt) : "—"}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-(--muted)">People</dt>
@@ -346,7 +349,7 @@ export function SequenceReport({
             {senderSignal ? (
               <div className="flex justify-between gap-4">
                 <dt className="text-(--muted)">Sender</dt>
-                <dd>{senderSignal}</dd>
+                <dd>{statusLabel(senderSignal)}</dd>
               </div>
             ) : null}
           </dl>
@@ -358,10 +361,10 @@ export function SequenceReport({
             <SoonBadge />
           </div>
           <p className="mt-2 text-sm text-(--muted)">
-            AI copy from these stats is Coming soon. The lines below are from the numbers on this run.
+            Writing new copy from these stats is coming soon. The notes below come from the numbers on this sequence.
           </p>
           <ul className="mt-3 space-y-2">
-            {(run?.insights ?? ["No send activity on this run yet. Start the sequence to fill the board."]).map((line) => (
+            {(run?.insights ?? ["No sends yet. Start the sequence to fill this in."]).map((line) => (
               <li key={line} className="rounded-lg bg-(--input) px-3 py-2 text-sm">
                 {line}
               </li>

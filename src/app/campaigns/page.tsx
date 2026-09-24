@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
+import { statusLabel } from "@/lib/ui/display";
 import { scheduleDelete, subscribePendingDelete } from "@/lib/client/pendingDelete";
 import { upsertSequence, useSequences } from "@/lib/client/sequencesCache";
 
@@ -39,15 +40,15 @@ export default function CampaignsPage() {
   return (
     <AppShell>
       <h1 className="text-2xl tracking-tight">Sequences</h1>
-      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
-        Create a draft, add LinkedIn profile URLs, then Start. Sequences are LinkedIn connection
-        plus messages. Stats live on Analytics. Learnings write a new draft only.
+      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
+        Create a draft, add people, then press Start. A sequence is a LinkedIn connection followed by messages. Stats stay on Analytics, and suggestions save as a new draft.
       </p>
-      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-(--line) bg-(--panel) p-4">
-        <div>
-          <label className="text-sm text-(--muted)">Name</label>
+      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-(--line) bg-(--panel) p-5">
+        <div className="min-w-64 flex-1">
+          <label className="text-sm text-(--muted)">Sequence name</label>
           <input
-            className="mt-1 block rounded border border-(--line) bg-(--input) px-3 py-2"
+            className="mt-1 block w-full rounded-lg border border-(--line) bg-(--input) px-3 py-2"
+            placeholder="Restaurant ops outreach"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
@@ -68,8 +69,8 @@ export default function CampaignsPage() {
           </li>
         ) : null}
         {loaded && visible.length === 0 ? (
-          <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
-            No sequences yet. Create a draft above.
+          <li className="rounded-2xl border border-dashed border-(--line) px-4 py-8 text-sm text-(--muted)">
+            No sequences yet. Name one above to start a draft.
           </li>
         ) : null}
         {error ? <li className="text-sm text-(--danger)">{error}</li> : null}
@@ -92,7 +93,7 @@ export default function CampaignsPage() {
                           : "muted"
                   }
                 >
-                  {c.status}
+                  {statusLabel(c.status)}
                 </StatusBadge>
                 {c.enrollmentCount} people
               </span>
@@ -100,7 +101,7 @@ export default function CampaignsPage() {
             {c.status === "draft" ? (
               <button
                 type="button"
-                className="btn-danger shrink-0 rounded-2xl px-4 text-sm"
+                className="btn-quiet-danger shrink-0 rounded-2xl px-4 text-sm"
                 onClick={() => scheduleDelete({ kind: "campaign", id: c.id, name: c.name })}
               >
                 Delete

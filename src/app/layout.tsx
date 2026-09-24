@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "SimpleSequence",
-  description: "LinkedIn sequences from profile URLs — agents add links, humans hit Start.",
+  description: "LinkedIn sequences for your agents. Paste profile URLs, draft the sequence, and press Start.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

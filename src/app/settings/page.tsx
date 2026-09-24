@@ -8,6 +8,7 @@ import { StatusBadge, Toggle } from "@/components/Toggle";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 import { cursorMcpInstallHref, mcpClientConfigJson } from "@/lib/domain/mcpInstall";
 import { useSettings, type SettingsSnapshot } from "@/lib/client/tabCaches";
+import { formatWhen, statusLabel } from "@/lib/ui/display";
 
 type Sender = {
   id: string;
@@ -57,6 +58,7 @@ export default function SettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
 
   async function refresh() {
     const [res, a] = await Promise.all([fetch("/api/settings"), fetch("/api/audit")]);
@@ -77,7 +79,7 @@ export default function SettingsPage() {
         await fetch("/api/accounts/sync", { method: "POST" });
         const after = await refresh();
         const selected = after.senders.find((s) => s.id === after.linkedinSenderId);
-        setNotice(selected ? `${selected.displayName} is connected.` : "Still waiting on Unipile. Use Sync if this doesn’t update.");
+        setNotice(selected ? `${selected.displayName} is connected.` : "Still waiting on the connection. Use Refresh accounts if this doesn’t update.");
       }
       if (connected) window.history.replaceState({}, "", "/settings");
     })();
@@ -176,8 +178,8 @@ export default function SettingsPage() {
   return (
     <AppShell>
       <h1 className="text-2xl tracking-tight">Settings</h1>
-      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
-        Connect LinkedIn. Pick which account sends. Safety switches live here so a sequence never starts sending by surprise.
+      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
+        Connect LinkedIn and choose which account sends. Safety controls live here so a sequence never starts sending by surprise.
       </p>
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
       {notice ? <p className="mt-4 text-sm text-(--ok)">{notice}</p> : null}
@@ -281,15 +283,15 @@ export default function SettingsPage() {
                 await refresh();
               }}
             >
-              Sync Unipile accounts
+              Refresh accounts
             </button>
           ) : (
-            <p className="text-sm text-(--muted)">Unipile keys aren’t loaded, so Add LinkedIn uses a sandbox account.</p>
+            <p className="text-sm text-(--muted)">Practice mode is on, so Add LinkedIn creates a sandbox account.</p>
           )}
         </div>
       </section>
 
-      <section className="mt-8 rounded-lg border border-(--line) bg-(--panel) p-4">
+      <section className="mt-8 rounded-2xl border border-(--line) bg-(--panel) p-5">
         <h2 className="text-xl">Safety</h2>
         <p className="mt-1 text-sm text-(--muted)">Timezone: {data.workspace?.timezone}</p>
         <div className="mt-4 divide-y divide-(--line)">
@@ -329,21 +331,33 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-8 rounded-lg border border-(--line) bg-(--panel) p-4">
-        <h2 className="text-xl">Cursor</h2>
-        <p className="mt-1 max-w-2xl text-sm text-(--muted)">
-          Add SimpleSequence in Cursor. An agent can import LinkedIn URLs, draft a sequence, Start, and
-          read the inbox. Import never sends on its own. Connecting LinkedIn stays on this page.
+      <section className="mt-8 rounded-2xl border border-(--line) bg-(--panel) p-5">
+        <h2 className="text-xl">Your agent</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
+          Add SimpleSequence in Cursor. Your agent can import LinkedIn URLs, draft a sequence, start it, and read the inbox. Import never sends on its own. Connecting LinkedIn stays on this page.
         </p>
-        <p className="mt-4 text-sm text-(--muted)">Key</p>
-        <p className="mt-1 font-mono text-sm">{data.workspace?.mcpApiKey}</p>
+        <p className="mt-4 text-sm text-(--muted)">API key</p>
+        <p className="mt-1 break-all rounded-lg border border-(--line) bg-(--input) px-3 py-2 font-mono text-sm">{data.workspace?.mcpApiKey}</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            className="btn-quiet rounded-full px-4 py-2 text-sm"
+            onClick={() => {
+              const key = data.workspace?.mcpApiKey ?? "";
+              void navigator.clipboard.writeText(key).then(() => {
+                setCopiedKey(true);
+                window.setTimeout(() => setCopiedKey(false), 2000);
+              });
+            }}
+          >
+            {copiedKey ? "Copied" : "Copy key"}
+          </button>
           <a href={cursorMcpInstallHref(data.workspace?.mcpApiKey ?? "")} className="btn-primary rounded-full px-4 py-2 text-sm">
             Add to Cursor
           </a>
           <button
             type="button"
-            className="rounded-full border border-(--line) px-4 py-2 text-sm"
+            className="btn-quiet rounded-full px-4 py-2 text-sm"
             onClick={() => {
               const key = data.workspace?.mcpApiKey ?? "";
               void navigator.clipboard.writeText(mcpClientConfigJson(key)).then(() => {
@@ -356,17 +370,17 @@ export default function SettingsPage() {
           </button>
         </div>
         <p className="mt-3 max-w-2xl text-sm text-(--muted)">
-          Copy config is the same server, for Claude or for pasting into Cursor by hand.
+          Copy config is for Claude, or for pasting into Cursor by hand.
         </p>
       </section>
 
-      <section className="mt-6 rounded-lg border border-(--line) bg-(--panel) p-4">
-        <h2 className="text-xl">Developer</h2>
+      <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
+        <h2 className="text-xl">Trial</h2>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="font-medium">Developer trial</p>
+            <p className="font-medium">Trial sender</p>
             <p className="mt-1 max-w-lg text-sm text-(--muted)">
-              On opens the trial sender. It stays out of the sidebar. Off stops a trial that is running.
+              Opens a practice sender for trying a sequence. It stays out of the sidebar. Turning this off stops a trial that is running.
             </p>
           </div>
           <Toggle
@@ -383,18 +397,23 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-6 rounded-lg border border-(--line) bg-(--panel) p-4">
-        <h2 className="text-xl">Audit log</h2>
-        <ul className="mt-3 max-h-80 overflow-auto text-sm">
-          {audit
-            .slice()
-            .reverse()
-            .map((row) => (
-              <li key={row.id}>
-                {row.createdAt} · {row.action}
-              </li>
-            ))}
-        </ul>
+      <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
+        <h2 className="text-xl">Activity</h2>
+        {audit.length === 0 ? (
+          <p className="mt-3 text-sm text-(--muted)">No activity yet.</p>
+        ) : (
+          <ul className="mt-3 max-h-80 overflow-auto text-sm">
+            {audit
+              .slice()
+              .reverse()
+              .map((row) => (
+                <li key={row.id} className="flex items-baseline justify-between gap-4 border-b border-(--line) py-2 last:border-0">
+                  <span>{statusLabel(row.action)}</span>
+                  <span className="shrink-0 text-(--muted)">{formatWhen(row.createdAt)}</span>
+                </li>
+              ))}
+          </ul>
+        )}
       </section>
     </AppShell>
   );

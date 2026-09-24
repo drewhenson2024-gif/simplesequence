@@ -56,7 +56,7 @@ function eventLabel(row: TrialEventView) {
   if (row.restricted) return "restricted";
   if (row.throttled) return "stopped";
   if (row.quota) return "invite limit";
-  if (row.sent) return row.dryRun ? "dry-run" : "sent";
+  if (row.sent) return row.dryRun ? "Sandbox" : "Sent";
   return "failed";
 }
 
@@ -234,8 +234,7 @@ export default function TrialsPage() {
       </p>
       {sandbox ? (
         <p className="mt-3 rounded border border-(--line) bg-(--panel) px-3 py-2 text-sm">
-          Sandbox is on — these are dry-runs, not live LinkedIn sends. Turn sandbox off in Settings
-          to test a live restrict.
+          Sandbox is on, so these stay in practice mode. Turn Sandbox off in Settings to send on LinkedIn.
         </p>
       ) : null}
       {hitRestrict ? (
@@ -376,7 +375,7 @@ export default function TrialsPage() {
                   <div className="mt-2 rounded-2xl border border-(--line) px-4 py-3 text-sm">
                     <p>
                       {run.action} every {run.intervalSeconds}s
-                      {run.dryRun ? " · dry-run" : ""}
+                      {run.dryRun ? " · Sandbox" : ""}
                       {run.endReason ? ` · ${run.endReason}` : ""}
                     </p>
                     {run.body ? <p className="mt-2 whitespace-pre-wrap text-(--muted)">{run.body}</p> : null}

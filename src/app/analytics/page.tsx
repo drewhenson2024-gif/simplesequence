@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { SoonBadge, StatusBadge } from "@/components/Toggle";
+import { statusLabel } from "@/lib/ui/display";
 import { useAnalytics } from "@/lib/client/tabCaches";
 
 function rateLabel(rate: number, sent: number) {
@@ -96,9 +97,8 @@ export default function AnalyticsPage() {
   return (
     <AppShell>
       <h1 className="text-2xl tracking-tight">Analytics</h1>
-      <p className="mt-1 max-w-2xl text-sm text-(--muted)">
-        LinkedIn send volume and replies from real jobs. Empty days stay at zero. Suggestions never
-        rewrite a live sequence and never auto-start.
+      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
+        LinkedIn sends and replies from sequences that have actually run. Empty days stay at zero. Suggestions save as a new draft and never change a sequence that is already running.
       </p>
 
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
@@ -132,8 +132,8 @@ export default function AnalyticsPage() {
 
       <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <section>
-          <h2 className="text-lg">Runs</h2>
-          <p className="mt-1 text-sm text-(--muted)">Every sequence in this workspace.</p>
+          <h2 className="text-lg">Sequences</h2>
+          <p className="mt-1 text-sm text-(--muted)">Every sequence, including drafts.</p>
           {!loaded ? (
             <p className="mt-4 text-sm text-(--muted)">Loading…</p>
           ) : data?.runs.length ? (
@@ -147,7 +147,7 @@ export default function AnalyticsPage() {
                   >
                     <span className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium">{run.name}</span>
-                      <StatusBadge tone={statusTone(run.status)}>{run.status}</StatusBadge>
+                      <StatusBadge tone={statusTone(run.status)}>{statusLabel(run.status)}</StatusBadge>
                     </span>
                     <span className="mt-1 block text-sm text-(--muted)">
                       {run.sent} sent · {run.replies} replies · {rateLabel(run.replyRate, run.sent)} · {run.skipped}{" "}
@@ -159,7 +159,7 @@ export default function AnalyticsPage() {
             </ul>
           ) : (
             <p className="mt-4 rounded-xl border border-(--line) px-4 py-3 text-sm text-(--muted)">
-              No runs yet. Sequences you create will land here with zeros until something sends.
+              No sequences yet. Create one and it will show here, at zero, until something sends.
             </p>
           )}
         </section>
@@ -169,7 +169,7 @@ export default function AnalyticsPage() {
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-(--muted)">Selected run</p>
+                  <p className="text-xs uppercase tracking-wide text-(--muted)">Selected sequence</p>
                   <h2 className="mt-1 text-lg">{selected.name}</h2>
                 </div>
                 <Link href={`/campaigns/${selected.id}`} className="btn-primary rounded-md px-4 py-1.5 text-sm">
@@ -198,8 +198,8 @@ export default function AnalyticsPage() {
                       selected.steps.map((step) => (
                         <tr key={step.stepIndex} className="border-t border-(--line)">
                           <td className="px-3 py-2">
-                            {step.stepIndex + 1}. {step.action}
-                            <span className="mt-0.5 block text-xs text-(--muted)">{step.channel}</span>
+                            {step.stepIndex + 1}. {step.action === "connection" ? "Connection" : "Message"}
+                            <span className="mt-0.5 block text-xs text-(--muted)">LinkedIn</span>
                           </td>
                           <td className="px-3 py-2">{step.sent}</td>
                           <td className="px-3 py-2">
@@ -220,7 +220,7 @@ export default function AnalyticsPage() {
                     ) : (
                       <tr className="border-t border-(--line)">
                         <td className="px-3 py-3 text-(--muted)" colSpan={6}>
-                          This run has no steps yet.
+                          This sequence has no steps yet.
                         </td>
                       </tr>
                     )}
@@ -244,7 +244,7 @@ export default function AnalyticsPage() {
                   <h3 className="text-sm font-medium">Suggestions</h3>
                 </div>
                 <p className="mt-2 text-sm text-(--muted)">
-                  Rule-based from the numbers on this run. Applying writes a new draft only.
+                  Based on the numbers from this sequence. Saving creates a new draft and leaves the current one unchanged.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button
@@ -268,7 +268,7 @@ export default function AnalyticsPage() {
             </>
           ) : (
             <p className="text-sm text-(--muted)">
-              {loaded ? "Select a run to see step breakdown, skip reasons, and suggestions." : "Loading…"}
+              {loaded ? "Select a sequence to see each step, skip reasons, and suggestions." : "Loading…"}
             </p>
           )}
         </section>

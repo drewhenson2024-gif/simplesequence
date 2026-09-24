@@ -237,7 +237,7 @@ export function SequenceEditor({
                 </div>
                 <div>
                   <div className="flex items-center justify-between text-sm text-(--muted)">
-                    <span>Preview · {lead.fullName || "enroll people to fill merge fields"}</span>
+                    <span>Preview · {lead.fullName || "Add people to fill in names"}</span>
                     <span>
                       <button
                         type="button"

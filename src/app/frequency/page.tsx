@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
+import { statusLabel } from "@/lib/ui/display";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 
 type Frequency = {
@@ -68,21 +69,21 @@ export default function FrequencyPage() {
   return (
     <AppShell>
       <h1 className="text-2xl">Frequency</h1>
-      <p className="mt-2 max-w-2xl text-sm text-(--muted)">
-        The shared account budget. Saving changes the cap and the gap for the next check. It does not send.
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--muted)">
+        How often this LinkedIn account may act. Saving changes the cap and the wait between actions. It does not send anything.
       </p>
 
       {!data ? (
         <p className="mt-6">Loading…</p>
       ) : (
         <>
-          <section className="mt-6 rounded-lg border border-(--line) bg-(--panel) p-4">
+          <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
             <p className="text-xs uppercase tracking-wide text-(--muted)">Account</p>
             {data.account ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <p className="font-medium">{data.account.displayName}</p>
                 <StatusBadge tone={signal === "restricted" ? "danger" : signal === "throttled" ? "wait" : "ok"}>
-                  {signal === "restricted" ? "Restricted" : signal === "throttled" ? "Slowed" : data.account.status}
+                  {signal === "restricted" ? "Restricted" : signal === "throttled" ? "Slowed" : statusLabel(data.account.status)}
                 </StatusBadge>
                 {profile ? (
                   <a href={profile} className="text-sm text-(--ochre)" target="_blank" rel="noreferrer">
@@ -96,10 +97,10 @@ export default function FrequencyPage() {
               </p>
             )}
             {signal === "restricted" ? (
-              <p className="mt-3 text-sm">LinkedIn has restricted this account. Frequency does not clear that.</p>
+              <p className="mt-3 text-sm">LinkedIn has restricted this account. Changing the limits here does not clear that.</p>
             ) : null}
             {signal === "throttled" ? (
-              <p className="mt-3 text-sm">LinkedIn has slowed this account. Frequency does not clear that.</p>
+              <p className="mt-3 text-sm">LinkedIn has slowed this account. Changing the limits here does not clear that.</p>
             ) : null}
           </section>
 
@@ -123,12 +124,12 @@ export default function FrequencyPage() {
             <div className="bg-(--paper) px-4 py-3">
               <p className="text-xs text-(--muted)">Next check</p>
               <p className="mt-1 text-xl">{data.nextCheckLabel}</p>
-              <p className="mt-1 text-xs text-(--muted)">The worker runs once a day.</p>
+              <p className="mt-1 text-xs text-(--muted)">Sends are checked once a day.</p>
             </div>
           </div>
 
-          <section className="mt-6 rounded-lg border border-(--line) bg-(--panel) p-4">
-            <h2 className="text-xl">Tune</h2>
+          <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
+            <h2 className="text-xl">Limits</h2>
             <div className="mt-4 flex flex-wrap gap-6">
               <label className="text-sm">
                 Connection cap

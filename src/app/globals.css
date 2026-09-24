@@ -95,6 +95,26 @@
   background: #a11f1f;
 }
 
+.btn-quiet {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  background: var(--input);
+}
+
+.btn-quiet-danger {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--danger);
+}
+
+.btn-quiet-danger:hover:not(:disabled) {
+  background: var(--input);
+}
+
 .dot-grid {
   background-image: radial-gradient(circle at 1px 1px, #1c2a3d 1px, transparent 0);
   background-size: 22px 22px;

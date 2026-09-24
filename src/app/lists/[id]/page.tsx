@@ -89,7 +89,7 @@ export default function ListDetailPage() {
       const res = await fetch(`/api/lists/${params.id}/export`, { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "export failed");
-      setExportResult(`${body.contacts?.length ?? 0} contacts → ${body.destination} (not sent)`);
+      setExportResult(`${body.contacts?.length ?? 0} contacts ready for ${body.destination}. Nothing was sent.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "export failed");
     } finally {
@@ -138,14 +138,13 @@ export default function ListDetailPage() {
           type="button"
           disabled={busy}
           onClick={deleteThis}
-          className="btn-danger rounded-2xl px-4 py-2 disabled:opacity-40"
+          className="btn-quiet-danger rounded-2xl px-4 py-2 disabled:opacity-40"
         >
           Delete list
         </button>
       </div>
       <p className="mt-2 text-sm text-(--muted)">
-        LinkedIn profile URLs. Name, title, and company come from the LinkedIn profile. Export does
-        not send messages.
+        Name, title, and company come from each LinkedIn profile. Export prepares contacts and does not send anything.
       </p>
       <div className="mt-4">
         <button
@@ -183,7 +182,7 @@ export default function ListDetailPage() {
                   <button
                     type="button"
                     disabled={removingId === lead.id}
-                    className="btn-danger rounded-2xl px-3 py-1 text-sm disabled:opacity-40"
+                    className="text-sm text-(--danger) disabled:opacity-40"
                     onClick={() => void removeLead(lead.id)}
                   >
                     Remove
