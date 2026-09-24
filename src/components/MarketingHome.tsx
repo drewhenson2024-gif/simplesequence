@@ -125,14 +125,13 @@ export function MarketingHome() {
         <div className="mx-auto max-w-6xl px-6 py-24">
           <h2 className="text-4xl sm:text-5xl">MCP for Cursor and Claude</h2>
           <p className="mt-4 max-w-2xl text-(--muted)">
-            Point the agent at the hosted MCP. It can add LinkedIn URLs, draft a sequence, Start,
-            read inbox, reply, and read Analytics. Connecting LinkedIn is still Settings after Open
-            app. Import never auto-sends.
+            Open the app, then Settings, then Add to Cursor. An agent can add LinkedIn URLs, draft a
+            sequence, Start, read inbox, reply, and read Analytics. Connecting LinkedIn is still
+            Settings. Import never auto-sends.
           </p>
-          <pre className="mt-8 max-w-2xl overflow-auto rounded-2xl border border-(--line) bg-(--panel) p-4 text-sm text-(--muted)">
-            {`POST https://simplesequence-three.vercel.app/mcp
-Header: X-API-Key (copy the key after Open app → Settings)`}
-          </pre>
+          <Link href="/lists" className="btn-primary mt-8 inline-flex rounded-full px-5 py-2.5 text-sm">
+            Open app
+          </Link>
         </div>
       </section>
 

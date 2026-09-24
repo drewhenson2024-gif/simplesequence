@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
+import { cursorMcpInstallHref, mcpClientConfigJson } from "@/lib/domain/mcpInstall";
 import { useSettings, type SettingsSnapshot } from "@/lib/client/tabCaches";
 
 type Sender = {
@@ -55,6 +56,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function refresh() {
     const [res, a] = await Promise.all([fetch("/api/settings"), fetch("/api/audit")]);
@@ -325,11 +327,36 @@ export default function SettingsPage() {
             />
           </div>
         </div>
-        <p className="mt-4 text-sm text-(--muted)">MCP key: {data.workspace?.mcpApiKey}</p>
-        <p className="mt-2 max-w-2xl text-sm text-(--muted)">
-          Cursor MCP: URL https://simplesequence-three.vercel.app/mcp with header X-API-Key set to
-          that key. Agents can import URLs, draft, Start, inbox, and analytics. Import never auto-sends.
-          Connecting LinkedIn is this page.
+      </section>
+
+      <section className="mt-8 rounded-lg border border-(--line) bg-(--panel) p-4">
+        <h2 className="text-xl">Cursor</h2>
+        <p className="mt-1 max-w-2xl text-sm text-(--muted)">
+          Add SimpleSequence in Cursor. An agent can import LinkedIn URLs, draft a sequence, Start, and
+          read the inbox. Import never sends on its own. Connecting LinkedIn stays on this page.
+        </p>
+        <p className="mt-4 text-sm text-(--muted)">Key</p>
+        <p className="mt-1 font-mono text-sm">{data.workspace?.mcpApiKey}</p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <a href={cursorMcpInstallHref(data.workspace?.mcpApiKey ?? "")} className="btn-primary rounded-full px-4 py-2 text-sm">
+            Add to Cursor
+          </a>
+          <button
+            type="button"
+            className="rounded-full border border-(--line) px-4 py-2 text-sm"
+            onClick={() => {
+              const key = data.workspace?.mcpApiKey ?? "";
+              void navigator.clipboard.writeText(mcpClientConfigJson(key)).then(() => {
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 2000);
+              });
+            }}
+          >
+            {copied ? "Copied" : "Copy config"}
+          </button>
+        </div>
+        <p className="mt-3 max-w-2xl text-sm text-(--muted)">
+          Copy config is the same server, for Claude or for pasting into Cursor by hand.
         </p>
       </section>
 
