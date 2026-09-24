@@ -34,7 +34,7 @@ function VolumeChart({ days }: { days: Array<{ date: string; sent: number; skipp
               <span key={tick}>{tick}</span>
             ))}
         </div>
-        <div className="flex min-w-0 flex-1 items-end gap-1 border-b border-(--line)">
+        <div className="flex min-w-0 flex-1 items-stretch gap-1 border-b border-(--line)">
           {days.map((day) => {
             const height = max === 0 ? 0 : (day.sent / max) * 100;
             return (
