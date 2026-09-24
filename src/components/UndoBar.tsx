@@ -22,21 +22,17 @@ export function UndoBar() {
   }, []);
 
   if (error) {
-    return (
-      <div className="mb-4 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--danger)">
-        {error}
-      </div>
-    );
+    return <div className="card mb-4 px-4 py-3 text-sm text-(--danger)">{error}</div>;
   }
 
   if (!pending) return null;
 
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3">
+    <div className="card mb-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <p className="text-sm">
         <span className="font-medium">{pending.name}</span> deleted.
       </p>
-      <button type="button" className="btn-primary rounded-2xl px-4 py-1.5 text-sm" onClick={undoDelete}>
+      <button type="button" className="btn btn-sm btn-primary" onClick={undoDelete}>
         Undo
       </button>
     </div>

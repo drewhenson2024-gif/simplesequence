@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AppShell } from "@/components/AppShell";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { useInbox, type InboxMessage } from "@/lib/client/tabCaches";
 import { formatWhen, statusLabel } from "@/lib/ui/display";
 
@@ -121,11 +121,11 @@ export default function InboxPage() {
 
   return (
     <AppShell>
-      <h1 className="text-2xl tracking-tight">Inbox</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
-        LinkedIn replies land here. A reply from this page does not start another sequence. Stop ends that person in the sequence.
-      </p>
-      <div className="mt-4 flex flex-wrap gap-2">
+      <PageHeader
+        title="Inbox"
+        lede="LinkedIn replies land here. A reply from this page does not start another sequence. Stop ends that person in the sequence."
+      />
+      <div className="mt-5 flex flex-wrap gap-2">
         {(
           [
             ["all", "All"],
@@ -137,9 +137,8 @@ export default function InboxPage() {
           <button
             key={key}
             type="button"
-            className={`rounded-full border px-3 py-1 text-sm ${
-              filter === key ? "border-(--ochre) bg-(--ochre) text-white" : "border-(--line)"
-            }`}
+            className="chip"
+            aria-pressed={filter === key}
             onClick={() => setFilter(key)}
           >
             {label}
@@ -150,13 +149,9 @@ export default function InboxPage() {
       {!loaded ? (
         <p className="mt-6 text-sm text-(--muted)">Loading…</p>
       ) : threads.length === 0 ? (
-        <p className="mt-6 rounded-2xl border border-dashed border-(--line) px-4 py-10 text-sm text-(--muted)">
-          No conversations yet. Replies show up here after a sequence sends.
-        </p>
+        <p className="empty mt-6">No conversations yet. Replies show up here after a sequence sends.</p>
       ) : visible.length === 0 ? (
-        <p className="mt-6 rounded-2xl border border-dashed border-(--line) px-4 py-10 text-sm text-(--muted)">
-          Nothing in this view.
-        </p>
+        <p className="empty mt-6">Nothing in this view.</p>
       ) : (
         <div className="mt-6 grid gap-4 md:grid-cols-[16rem_1fr]">
           <ul className="space-y-1">
@@ -166,10 +161,8 @@ export default function InboxPage() {
                 <li key={thread.enrollmentId}>
                   <button
                     type="button"
-                    className={`w-full rounded-xl border px-3 py-2 text-left ${
-                      active?.enrollmentId === thread.enrollmentId
-                        ? "border-(--ochre) bg-(--panel)"
-                        : "border-(--line) bg-(--panel)"
+                    className={`card card-link w-full rounded-xl px-3 py-2.5 text-left ${
+                      active?.enrollmentId === thread.enrollmentId ? "border-(--ochre) bg-(--tint)" : ""
                     }`}
                     onClick={() => setOpenId(thread.enrollmentId)}
                   >
@@ -181,7 +174,7 @@ export default function InboxPage() {
             })}
           </ul>
           {active ? (
-            <section className="rounded-2xl border border-(--line) bg-(--panel) p-5">
+            <section className="card p-5">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl">{active.leadName}</h2>
@@ -191,7 +184,7 @@ export default function InboxPage() {
                 </div>
                 <button
                   type="button"
-                  className="btn-quiet-danger rounded-full px-4 py-1.5 text-sm"
+                  className="btn btn-sm btn-quiet-danger"
                   onClick={() => void stop(active.enrollmentId)}
                 >
                   Stop
@@ -199,8 +192,13 @@ export default function InboxPage() {
               </div>
               <ol className="mt-4 space-y-3">
                 {active.messages.map((m) => (
-                  <li key={m.id} className="rounded-xl border border-(--line) bg-(--input) p-3">
-                    <p className="text-sm text-(--muted)">
+                  <li
+                    key={m.id}
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      m.direction === "inbound" ? "bg-(--input) ring-1 ring-inset ring-(--line)" : "ml-auto bg-(--tint)"
+                    }`}
+                  >
+                    <p className="text-xs text-(--muted)">
                       {m.direction === "inbound" ? "Them" : "You"} · LinkedIn · {formatWhen(m.createdAt)}
                     </p>
                     {m.subject ? <p className="mt-1 text-sm">{m.subject}</p> : null}
@@ -210,7 +208,7 @@ export default function InboxPage() {
               </ol>
               <div className="mt-4 border-t border-(--line) pt-4">
                 <textarea
-                  className="mt-3 h-24 w-full rounded-lg border border-(--line) bg-(--input) p-3 text-sm"
+                  className="field h-24"
                   placeholder="Reply on LinkedIn…"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -219,7 +217,7 @@ export default function InboxPage() {
                   type="button"
                   disabled={busy || !draft.trim() || !canLinkedIn}
                   onClick={() => void reply()}
-                  className="btn-primary mt-3 rounded-full px-4 py-2 disabled:opacity-40"
+                  className="btn btn-primary mt-3"
                 >
                   {busy ? "Sending…" : "Reply"}
                 </button>

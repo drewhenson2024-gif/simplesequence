@@ -127,8 +127,8 @@ export function SequenceReport({
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="min-w-0">
         <section>
-          <p className="text-xs uppercase tracking-wide text-(--muted)">People</p>
-          <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-(--line) bg-(--line) sm:grid-cols-3 lg:grid-cols-6">
+          <p className="eyebrow">People</p>
+          <div className="stat-grid mt-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
             {[
               ["Added", total],
               ["Remaining", remaining],
@@ -137,22 +137,22 @@ export function SequenceReport({
               ["Stopped", stopped],
               ["Failed", failed],
             ].map(([label, value]) => (
-              <div key={String(label)} className="bg-(--paper) px-4 py-3">
+              <div key={String(label)}>
                 <p className="text-xs text-(--muted)">{label}</p>
-                <p className="mt-1 text-xl">{value}</p>
+                <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
               </div>
             ))}
           </div>
           {accountBudget ? (
-            <div className="mt-3 grid gap-px overflow-hidden rounded-xl border border-(--line) bg-(--line) sm:grid-cols-[12rem_minmax(0,1fr)]">
-              <div className="bg-(--paper) px-4 py-3">
+            <div className="stat-grid mt-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <div>
                 <p className="text-xs text-(--muted)">Connections</p>
-                <p className="mt-1 text-xl">
+                <p className="mt-1 text-xl font-semibold tracking-tight">
                   {accountBudget.connectionsUsed} of {accountBudget.connectionCap}
                 </p>
                 <p className="mt-1 text-xs text-(--muted)">Last 24 hours</p>
               </div>
-              <div className="bg-(--paper) px-4 py-3">
+              <div>
                 <p className="text-xs text-(--muted)">Next step</p>
                 <p className="mt-1">{accountBudget.note ?? "Nothing is waiting on the account."}</p>
               </div>
@@ -161,10 +161,10 @@ export function SequenceReport({
         </section>
 
         <section className="mt-8">
-          <p className="text-xs uppercase tracking-wide text-(--muted)">Stage breakdown</p>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-(--line)">
+          <p className="eyebrow">Stage breakdown</p>
+          <div className="card mt-3 overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead className="text-(--muted)">
+              <thead className="bg-(--input) text-(--muted)">
                 <tr>
                   <th className="px-4 py-2 font-medium">Stage</th>
                   <th className="px-4 py-2 font-medium">Type</th>
@@ -216,9 +216,9 @@ export function SequenceReport({
               </span>
             ))}
           </div>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-(--line)">
+          <div className="card mt-3 overflow-x-auto">
             <table className="w-full text-left text-sm">
-              <thead>
+              <thead className="bg-(--input)">
                 <tr className="text-(--muted)">
                   <th className="px-4 py-2 font-medium">Person</th>
                   <th className="px-4 py-2 font-medium">Title</th>
@@ -269,9 +269,8 @@ export function SequenceReport({
               <button
                 key={key}
                 type="button"
-                className={`rounded-full border px-3 py-1 text-sm ${
-                  outboxFilter === key ? "border-(--ochre) bg-(--ochre) text-white" : "border-(--line)"
-                }`}
+                className="chip"
+                aria-pressed={outboxFilter === key}
                 onClick={() => onOutboxFilter(key)}
               >
                 {statusLabel(key)}
@@ -287,14 +286,14 @@ export function SequenceReport({
           </div>
           <ul className="mt-3 space-y-2 text-sm">
             {jobs.length === 0 ? (
-              <li className="rounded-xl border border-dashed border-(--line) px-4 py-6 text-(--muted)">
+              <li className="empty">
                 Nothing queued yet. Start the sequence to line up sends.
               </li>
             ) : (
               jobs.filter((job) => jobFilterMatch(job.status)).map((job) => {
                 const reason = skipLabel(job.skipReason ?? job.error);
                 return (
-                  <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-(--line) px-3 py-2">
+                  <li key={job.id} className="card flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-2.5 shadow-none">
                     <div>
                       <p>
                         {job.lead?.fullName ?? "Person"} · step {job.stepIndex + 1}
@@ -323,8 +322,8 @@ export function SequenceReport({
       </div>
 
       <aside className="space-y-6">
-        <section className="rounded-xl border border-(--line) p-4">
-          <p className="text-xs uppercase tracking-wide text-(--muted)">Details</p>
+        <section className="card p-5">
+          <p className="eyebrow">Details</p>
           <dl className="mt-3 space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-(--muted)">Status</dt>
@@ -355,9 +354,9 @@ export function SequenceReport({
           </dl>
         </section>
 
-        <section className="rounded-xl border border-(--line) p-4">
+        <section className="card p-5">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs uppercase tracking-wide text-(--muted)">Insights</p>
+            <p className="eyebrow">Insights</p>
             <SoonBadge />
           </div>
           <p className="mt-2 text-sm text-(--muted)">
@@ -365,12 +364,12 @@ export function SequenceReport({
           </p>
           <ul className="mt-3 space-y-2">
             {(run?.insights ?? ["No sends yet. Start the sequence to fill this in."]).map((line) => (
-              <li key={line} className="rounded-lg bg-(--input) px-3 py-2 text-sm">
+              <li key={line} className="rounded-xl bg-(--input) px-3 py-2 text-sm ring-1 ring-inset ring-(--line)">
                 {line}
               </li>
             ))}
           </ul>
-          <Link href={`/analytics`} className="mt-3 inline-block text-sm text-(--ochre)">
+          <Link href={`/analytics`} className="mt-3 inline-block text-sm font-medium text-(--ochre) hover:underline">
             Open Analytics
           </Link>
         </section>

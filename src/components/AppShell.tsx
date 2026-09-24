@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Logo } from "@/components/Logo";
 import { UndoBar } from "@/components/UndoBar";
 import { ensurePeopleCache } from "@/lib/client/peopleCache";
 import { ensureSequencesCache } from "@/lib/client/sequencesCache";
@@ -25,6 +26,26 @@ export function BackLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+export function PageHeader({
+  title,
+  lede,
+  actions,
+}: {
+  title: ReactNode;
+  lede?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-2xl tracking-tight">{title}</h1>
+        {lede ? <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">{lede}</p> : null}
+      </div>
+      {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const items = NAV;
@@ -36,13 +57,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     void ensureSettingsCache();
   }, []);
   return (
-    <div className="app flex min-h-screen">
-      <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center border-r border-(--line) bg-(--paper) py-3 md:w-56 md:items-stretch md:px-3 md:py-4">
-        <Link href="/" title="SimpleSequence" className="mb-4 flex items-center gap-2 md:mb-6 md:px-2">
-          <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-(--ochre) text-xs font-medium text-white">
-            S
-          </span>
-          <span className="hidden text-sm font-medium md:inline">SimpleSequence</span>
+    <div className="flex min-h-screen">
+      <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center border-r border-(--line) bg-(--panel) py-3 md:w-56 md:items-stretch md:px-3 md:py-4">
+        <Link href="/" title="SimpleSequence" className="mb-4 md:mb-6 md:px-2">
+          <Logo collapse />
         </Link>
         <nav className="flex flex-1 flex-col items-center gap-1 md:items-stretch">
           {items.map((item) => {
@@ -55,7 +73,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 title={item.label}
                 aria-current={active ? "page" : undefined}
                 className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm md:h-auto md:w-auto md:justify-start md:gap-3 md:px-2 md:py-2 ${
-                  active ? "bg-(--input) text-(--ochre)" : "text-(--muted) hover:bg-(--input) hover:text-(--ink)"
+                  active ? "bg-(--tint) font-medium text-(--ochre)" : "text-(--muted) hover:bg-(--input) hover:text-(--ink)"
                 }`}
               >
                 <Icon />

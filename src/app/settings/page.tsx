@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 import { cursorMcpInstallHref, mcpClientConfigJson } from "@/lib/domain/mcpInstall";
@@ -164,7 +164,8 @@ export default function SettingsPage() {
   if (!data) {
     return (
       <AppShell>
-        <p>Loading…</p>
+        <PageHeader title="Settings" />
+        <p className="mt-6 text-sm text-(--muted)">Loading…</p>
       </AppShell>
     );
   }
@@ -177,24 +178,20 @@ export default function SettingsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-2xl tracking-tight">Settings</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
-        Connect LinkedIn and choose which account sends. Safety controls live here so a sequence never starts sending by surprise.
-      </p>
+      <PageHeader
+        title="Settings"
+        lede="Connect LinkedIn and choose which account sends. Safety controls live here so a sequence never starts sending by surprise."
+      />
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
       {notice ? <p className="mt-4 text-sm text-(--ok)">{notice}</p> : null}
 
-      <section className="mt-6">
-        <h2 className="text-xl">LinkedIn</h2>
+      <section className="card mt-6 p-5">
+        <h2 className="text-lg">LinkedIn</h2>
         <p className="mt-1 max-w-2xl text-sm text-(--muted)">
           Used for connection requests and LinkedIn messages. The selected account is the one that sends.
         </p>
         <ul className="mt-4 space-y-2">
-          {linkedin.length === 0 ? (
-            <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
-              No LinkedIn accounts yet.
-            </li>
-          ) : null}
+          {linkedin.length === 0 ? <li className="empty">No LinkedIn accounts yet.</li> : null}
           {linkedin.map((sender) => {
             const state = accountState(sender, Boolean(data.liveKeys));
             const selected = sender.id === selectedId;
@@ -206,8 +203,8 @@ export default function SettingsPage() {
             return (
               <li
                 key={sender.id}
-                className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-(--panel) px-4 py-3 ${
-                  selected ? "border-(--ochre)" : "border-(--line)"
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 ${
+                  selected ? "border-(--ochre) bg-(--tint)" : "border-(--line) bg-(--panel)"
                 }`}
               >
                 <div className="min-w-0">
@@ -221,7 +218,7 @@ export default function SettingsPage() {
                       href={profileHref}
                       target="_blank"
                       rel="noreferrer"
-                      className="mt-1 block truncate text-sm text-(--ochre) underline"
+                      className="mt-1 block truncate text-sm text-(--ochre) hover:underline"
                     >
                       {profileLabel(profileHref)}
                     </a>
@@ -236,7 +233,7 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       disabled={Boolean(busy)}
-                      className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
+                      className="btn btn-sm btn-quiet"
                       onClick={() => void patch({ linkedinSenderId: sender.id })}
                     >
                       Use this
@@ -246,7 +243,7 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       disabled={Boolean(busy)}
-                      className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
+                      className="btn btn-sm btn-quiet"
                       onClick={() => void reconnect(sender.id)}
                     >
                       {busy === `reconnect:${sender.id}` ? "Opening…" : "Reconnect"}
@@ -255,7 +252,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     disabled={Boolean(busy)}
-                    className="rounded-full border border-(--line) px-3 py-1.5 text-sm disabled:opacity-40"
+                    className="btn btn-sm btn-quiet-danger"
                     onClick={() => void removeAccount(sender.id)}
                   >
                     {busy === `remove:${sender.id}` ? "Removing…" : "Remove"}
@@ -269,7 +266,7 @@ export default function SettingsPage() {
           <button
             type="button"
             disabled={Boolean(busy)}
-            className="btn-primary rounded-full px-4 py-2 disabled:opacity-40"
+            className="btn btn-primary"
             onClick={() => void addLinkedIn()}
           >
             {busy === "add" ? "Opening…" : "Add LinkedIn"}
@@ -277,7 +274,7 @@ export default function SettingsPage() {
           {data.liveKeys ? (
             <button
               type="button"
-              className="rounded-full border border-(--line) px-4 py-2 text-sm"
+              className="btn btn-quiet"
               onClick={async () => {
                 await fetch("/api/accounts/sync", { method: "POST" });
                 await refresh();
@@ -291,8 +288,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-8 rounded-2xl border border-(--line) bg-(--panel) p-5">
-        <h2 className="text-xl">Safety</h2>
+      <section className="card mt-6 p-5">
+        <h2 className="text-lg">Safety</h2>
         <p className="mt-1 text-sm text-(--muted)">Times use {timezoneLabel(data.workspace?.timezone)}.</p>
         <div className="mt-4 divide-y divide-(--line)">
           <div className="flex flex-wrap items-center justify-between gap-4 py-4 first:pt-0">
@@ -310,7 +307,11 @@ export default function SettingsPage() {
             />
           </div>
           <p className="py-4 text-sm text-(--muted)">
-            Connection cap and the gap between actions are on <Link href="/frequency">Frequency</Link>. A
+            Connection cap and the gap between actions are on{" "}
+            <Link href="/frequency" className="text-(--ochre) hover:underline">
+              Frequency
+            </Link>
+            . A
             higher-priority sequence takes the next slot. LinkedIn can still restrict an account.
           </p>
           <div className="flex flex-wrap items-center justify-between gap-4 py-4 last:pb-0">
@@ -331,17 +332,17 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-8 rounded-2xl border border-(--line) bg-(--panel) p-5">
-        <h2 className="text-xl">Your agent</h2>
+      <section className="card mt-6 p-5">
+        <h2 className="text-lg">Your agent</h2>
         <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
           Add SimpleSequence in Cursor. Your agent can import LinkedIn URLs, draft a sequence, start it, and read the inbox. Import never sends on its own. Connecting LinkedIn stays on this page.
         </p>
-        <p className="mt-4 text-sm text-(--muted)">API key</p>
-        <p className="mt-1 rounded-lg border border-(--line) bg-(--input) px-3 py-2 font-mono text-sm tracking-wider">••••••••••••</p>
+        <p className="label mt-4">API key</p>
+        <p className="field mt-1.5 max-w-sm font-mono tracking-wider">••••••••••••</p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            className="btn-quiet rounded-full px-4 py-2 text-sm"
+            className="btn btn-quiet"
             onClick={() => {
               const key = data.workspace?.mcpApiKey ?? "";
               void navigator.clipboard.writeText(key).then(() => {
@@ -352,12 +353,12 @@ export default function SettingsPage() {
           >
             {copiedKey ? "Copied" : "Copy key"}
           </button>
-          <a href={cursorMcpInstallHref(data.workspace?.mcpApiKey ?? "")} className="btn-primary rounded-full px-4 py-2 text-sm">
+          <a href={cursorMcpInstallHref(data.workspace?.mcpApiKey ?? "")} className="btn btn-primary">
             Add to Cursor
           </a>
           <button
             type="button"
-            className="btn-quiet rounded-full px-4 py-2 text-sm"
+            className="btn btn-quiet"
             onClick={() => {
               const key = data.workspace?.mcpApiKey ?? "";
               void navigator.clipboard.writeText(mcpClientConfigJson(key)).then(() => {
@@ -374,8 +375,8 @@ export default function SettingsPage() {
         </p>
       </section>
 
-      <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
-        <h2 className="text-xl">Trial</h2>
+      <section className="card mt-6 p-5">
+        <h2 className="text-lg">Trial</h2>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="font-medium">Trial sender</p>
@@ -397,8 +398,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
-        <h2 className="text-xl">Activity</h2>
+      <section className="card mt-6 p-5">
+        <h2 className="text-lg">Activity</h2>
         {audit.length === 0 ? (
           <p className="mt-3 text-sm text-(--muted)">No activity yet.</p>
         ) : (

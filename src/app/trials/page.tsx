@@ -207,11 +207,11 @@ export default function TrialsPage() {
   if (!trialOn) {
     return (
       <AppShell>
-        <h1 className="text-3xl">Developer trial</h1>
+        <h1 className="text-2xl tracking-tight">Developer trial</h1>
         <p className="mt-3 max-w-xl text-(--muted)">
           Turn this on in Settings to put Trial in the top nav and keep a history of each run.
         </p>
-        <Link href="/settings" className="btn-primary mt-4 inline-flex rounded-full px-4 py-2">
+        <Link href="/settings" className="btn btn-primary mt-4">
           Settings
         </Link>
       </AppShell>
@@ -226,14 +226,14 @@ export default function TrialsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-3xl">Developer trial</h1>
+      <h1 className="text-2xl tracking-tight">Developer trial</h1>
       <p className="mt-2 max-w-2xl text-(--muted)">
         Fire real LinkedIn actions at a set pace and stop on invite limit, throttle, or restrict.
         Each Start is a stored run. When it ends, it is history — start a new one. This does not
         create LinkedIn accounts.
       </p>
       {sandbox ? (
-        <p className="mt-3 rounded border border-(--line) bg-(--panel) px-3 py-2 text-sm">
+        <p className="card mt-3 px-4 py-3 text-sm">
           Sandbox is on, so these stay in practice mode. Turn Sandbox off in Settings to send on LinkedIn.
         </p>
       ) : null}
@@ -257,11 +257,11 @@ export default function TrialsPage() {
       {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-(--line) bg-(--panel) p-4">
-          <label className="block text-sm text-(--muted)">
+        <div className="card p-5">
+          <label className="label">
             Action
             <select
-              className="mt-1 block w-full rounded border border-(--line) bg-(--input) px-3 py-2"
+              className="field mt-1.5 block"
               value={action}
               disabled={running}
               onChange={(e) => setAction(e.target.value as "connection" | "message")}
@@ -270,32 +270,32 @@ export default function TrialsPage() {
               <option value="message">Message</option>
             </select>
           </label>
-          <label className="mt-4 block text-sm text-(--muted)">
+          <label className="label mt-4">
             Seconds between actions
             <input
               type="number"
               min={1}
-              className="mt-1 block w-32 rounded border border-(--line) bg-(--input) px-3 py-2"
+              className="field mt-1.5 block w-32"
               value={seconds}
               disabled={running}
               onChange={(e) => setSeconds(Math.max(1, Number(e.target.value) || 1))}
             />
           </label>
-          <label className="mt-4 block text-sm text-(--muted)">
+          <label className="label mt-4">
             Message (optional)
             <textarea
-              className="mt-1 h-24 w-full rounded border border-(--line) bg-(--input) p-3 text-sm"
+              className="field mt-1.5 h-24 font-normal"
               value={body}
               disabled={running}
               onChange={(e) => setBody(e.target.value)}
             />
           </label>
         </div>
-        <div className="rounded-lg border border-(--line) bg-(--panel) p-4">
-          <label className="block text-sm text-(--muted)">
+        <div className="card p-5">
+          <label className="label">
             LinkedIn profile URLs
             <textarea
-              className="mt-1 h-48 w-full rounded border border-(--line) bg-(--input) p-3 font-mono text-sm"
+              className="field mt-1.5 h-48 font-mono font-normal"
               placeholder={"https://www.linkedin.com/in/priya-rao\nhttps://www.linkedin.com/in/matt-cole"}
               value={urlsText}
               disabled={running}
@@ -308,15 +308,15 @@ export default function TrialsPage() {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {running ? (
-          <button type="button" className="btn-danger rounded-full px-4 py-2" onClick={() => void stop()}>
+          <button type="button" className="btn btn-danger" onClick={() => void stop()}>
             Stop
           </button>
         ) : (
-          <button type="button" className="btn-primary rounded-full px-4 py-2" onClick={() => void start()}>
+          <button type="button" className="btn btn-primary" onClick={() => void start()}>
             Start
           </button>
         )}
-        <Link href="/settings" className="rounded-full border border-(--line) px-4 py-2 text-sm">
+        <Link href="/settings" className="btn btn-quiet">
           Settings
         </Link>
       </div>
@@ -333,7 +333,7 @@ export default function TrialsPage() {
 
       <ul className="mt-4 space-y-2">
         {(live?.events ?? []).slice().reverse().map((row) => (
-          <li key={row.id} className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm">
+          <li key={row.id} className="card px-4 py-3 text-sm">
             <span className="text-(--muted)">{row.at}</span>
             {" · "}
             {eventLabel(row)}
@@ -345,7 +345,7 @@ export default function TrialsPage() {
       </ul>
 
       <section className="mt-10">
-        <h2 className="text-xl">Past trials</h2>
+        <h2 className="text-lg">Past trials</h2>
         <p className="mt-1 text-sm text-(--muted)">Read-only. Open a run to see the recipe and what happened.</p>
         {archive.length === 0 ? (
           <p className="mt-3 text-sm text-(--muted)">No stored runs yet.</p>
@@ -356,7 +356,7 @@ export default function TrialsPage() {
                 <button
                   type="button"
                   className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${
-                    selectedId === run.id ? "border-(--ochre) bg-(--panel)" : "border-(--line) bg-(--panel)"
+                    selectedId === run.id ? "border-(--ochre) bg-(--tint)" : "border-(--line) bg-(--panel)"
                   }`}
                   onClick={() => setSelectedId((id) => (id === run.id ? null : run.id))}
                 >
@@ -372,7 +372,7 @@ export default function TrialsPage() {
                   <span className="mt-1 block text-(--muted)">{run.startedAt}</span>
                 </button>
                 {selected?.id === run.id ? (
-                  <div className="mt-2 rounded-2xl border border-(--line) px-4 py-3 text-sm">
+                  <div className="card mt-2 px-4 py-3 text-sm">
                     <p>
                       {run.action} every {run.intervalSeconds}s
                       {run.dryRun ? " · Sandbox" : ""}

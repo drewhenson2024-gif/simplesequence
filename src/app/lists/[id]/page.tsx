@@ -100,7 +100,8 @@ export default function ListDetailPage() {
   if (!loaded && !data) {
     return (
       <AppShell>
-        <p>Loading…</p>
+        <BackLink href="/lists" label="People" />
+        <p className="mt-4 text-sm text-(--muted)">Loading…</p>
       </AppShell>
     );
   }
@@ -119,66 +120,63 @@ export default function ListDetailPage() {
   return (
     <AppShell>
       <BackLink href="/lists" label="People" />
-      <input
-        aria-label="List name"
-        className="mt-3 w-full min-w-0 rounded-md border border-(--line) bg-(--paper) px-3 py-2 text-2xl leading-normal"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={busy || !name.trim() || name.trim() === data.name}
-          onClick={() => void saveName()}
-          className="btn-primary rounded-2xl px-4 py-2 disabled:opacity-40"
-        >
-          Save name
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={deleteThis}
-          className="btn-quiet-danger rounded-2xl px-4 py-2 disabled:opacity-40"
-        >
-          Delete list
-        </button>
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
+        <input
+          aria-label="List name"
+          className="field min-w-0 flex-1 text-2xl font-semibold tracking-tight"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy || !name.trim() || name.trim() === data.name}
+            onClick={() => void saveName()}
+            className="btn btn-primary"
+          >
+            Save name
+          </button>
+          <button type="button" onClick={() => void exportCrm()} disabled={busy} className="btn btn-quiet">
+            {busy ? "Exporting…" : "Export to CRM"}
+          </button>
+          <button type="button" disabled={busy} onClick={deleteThis} className="btn btn-quiet-danger">
+            Delete list
+          </button>
+        </div>
       </div>
       <p className="mt-2 text-sm text-(--muted)">
         Name, title, and company come from each LinkedIn profile. Export prepares contacts and does not send anything.
       </p>
-      <div className="mt-4">
-        <button
-          type="button"
-          onClick={() => void exportCrm()}
-          disabled={busy}
-          className="rounded-2xl border border-(--line) px-4 py-2"
-        >
-          {busy ? "Exporting…" : "Export to CRM"}
-        </button>
-      </div>
       {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
       {exportResult ? <p className="mt-3 text-sm text-(--muted)">{exportResult}</p> : null}
-      <div className="mt-6 overflow-x-auto">
+      <div className="card mt-6 overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-(--line) text-(--muted)">
-              <th className="py-2 pr-4">Name</th>
-              <th className="pr-4">Title</th>
-              <th className="pr-4">Company</th>
-              <th className="pr-4">LinkedIn</th>
+          <thead className="bg-(--input) text-(--muted)">
+            <tr>
+              <th className="px-4 py-2.5 font-medium">Name</th>
+              <th className="px-4 py-2.5 font-medium">Title</th>
+              <th className="px-4 py-2.5 font-medium">Company</th>
+              <th className="px-4 py-2.5 font-medium">LinkedIn</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
+            {data.leads.length === 0 ? (
+              <tr>
+                <td className="px-4 py-6 text-center text-(--muted)" colSpan={5}>
+                  No people in this list.
+                </td>
+              </tr>
+            ) : null}
             {data.leads.map((lead) => (
-              <tr key={lead.id} className="border-b border-(--line)">
-                <td className="py-2 pr-4">{lead.fullName || "—"}</td>
-                <td className="pr-4">{lead.title || "—"}</td>
-                <td className="pr-4">{lead.company || "—"}</td>
-                <td className="truncate pr-4">
+              <tr key={lead.id} className="border-t border-(--line)">
+                <td className="px-4 py-2.5 font-medium">{lead.fullName || "—"}</td>
+                <td className="px-4 py-2.5">{lead.title || "—"}</td>
+                <td className="px-4 py-2.5">{lead.company || "—"}</td>
+                <td className="max-w-64 truncate px-4 py-2.5 text-(--muted)">
                   {lead.linkedinUrlNormalized ?? lead.linkedinUrl ?? "—"}
                 </td>
-                <td>
+                <td className="px-4 py-2.5 text-right">
                   <button
                     type="button"
                     disabled={removingId === lead.id}

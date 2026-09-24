@@ -58,7 +58,7 @@ type Campaign = {
 
 type OutboxFilter = "all" | "queued" | "sent" | "skipped" | "failed";
 
-const ACTION_BTN = "rounded-md px-4 py-2";
+const ACTION_BTN = "btn";
 
 function toEditor(steps: Campaign["steps"]): EditorStep[] {
   return [...steps]
@@ -254,7 +254,8 @@ export default function CampaignDetailPage() {
   if (!data) {
     return (
       <AppShell>
-        <p>Loading…</p>
+        <BackLink href="/campaigns" label="Sequences" />
+        <p className="mt-4 text-sm text-(--muted)">Loading…</p>
       </AppShell>
     );
   }
@@ -281,7 +282,7 @@ export default function CampaignDetailPage() {
           </p>
           {editable ? (
             <input
-              className="w-full min-w-0 rounded-md border border-(--line) bg-(--paper) px-3 py-2 text-2xl leading-normal"
+              className="field min-w-0 text-2xl font-semibold tracking-tight"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
@@ -299,7 +300,7 @@ export default function CampaignDetailPage() {
             <input
               key={data.priority ?? 0}
               type="number"
-              className="w-20 rounded-md border border-(--line) bg-(--paper) px-2 py-1 text-(--ink)"
+              className="field w-20 px-2 py-1"
               defaultValue={data.priority ?? 0}
               onBlur={(e) => {
                 const next = Number(e.target.value);
@@ -316,23 +317,23 @@ export default function CampaignDetailPage() {
               type="button"
               disabled={!dirty || saving}
               onClick={() => void save()}
-              className={`btn-primary ${ACTION_BTN} disabled:opacity-40`}
+              className={`${ACTION_BTN} ${data.status === "draft" || data.status === "paused" ? "btn-quiet" : "btn-primary"}`}
             >
               {saving ? "Saving…" : "Save changes"}
             </button>
           ) : null}
           {data.status === "draft" || data.status === "paused" ? (
-            <button type="button" onClick={() => void start()} className={`btn-primary ${ACTION_BTN}`}>
+            <button type="button" onClick={() => void start()} className={`${ACTION_BTN} btn-primary`}>
               Start
             </button>
           ) : null}
           {data.status === "running" ? (
-            <button type="button" onClick={() => void pause()} className={`border border-(--line) ${ACTION_BTN}`}>
+            <button type="button" onClick={() => void pause()} className={`${ACTION_BTN} btn-quiet`}>
               Pause
             </button>
           ) : null}
           {data.status === "draft" ? (
-            <button type="button" onClick={deleteDraft} className={`btn-quiet-danger ${ACTION_BTN}`}>
+            <button type="button" onClick={deleteDraft} className={`${ACTION_BTN} btn-quiet-danger`}>
               Delete draft
             </button>
           ) : null}
@@ -356,8 +357,8 @@ export default function CampaignDetailPage() {
           <button
             key={key}
             type="button"
-            className={`-mb-px border-b-2 pb-2 capitalize ${
-              view === key ? "border-(--ink) text-(--ink)" : "border-transparent text-(--muted)"
+            className={`-mb-px border-b-2 pb-2.5 font-medium capitalize ${
+              view === key ? "border-(--ochre) text-(--ochre)" : "border-transparent text-(--muted) hover:text-(--ink)"
             }`}
             onClick={() => setTab(key)}
           >
@@ -391,12 +392,12 @@ export default function CampaignDetailPage() {
             </p>
           ) : null}
           {data.status === "draft" ? (
-            <section className="mt-8 rounded-xl border border-(--line) p-4">
+            <section className="card mt-8 p-5">
               <h2 className="text-lg">People in this sequence</h2>
               <p className="mt-1 text-sm text-(--muted)">Pick a list of LinkedIn URLs, then add those people here.</p>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <select
-                  className="rounded-md border border-(--line) bg-(--paper) px-3 py-2"
+                  className="field w-auto min-w-56"
                   value={listId}
                   onChange={(e) => setListId(e.target.value)}
                 >
@@ -406,7 +407,7 @@ export default function CampaignDetailPage() {
                     </option>
                   ))}
                 </select>
-                <button type="button" onClick={() => void addLeads()} className="rounded-md border border-(--line) px-4 py-2">
+                <button type="button" onClick={() => void addLeads()} className="btn btn-quiet">
                   Add from list
                 </button>
               </div>

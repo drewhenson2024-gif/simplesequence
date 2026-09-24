@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
 import { statusLabel } from "@/lib/ui/display";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
@@ -68,17 +68,17 @@ export default function FrequencyPage() {
 
   return (
     <AppShell>
-      <h1 className="text-2xl">Frequency</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--muted)">
-        How often this LinkedIn account may act. Saving changes the cap and the wait between actions. It does not send anything.
-      </p>
+      <PageHeader
+        title="Frequency"
+        lede="How often this LinkedIn account may act. Saving changes the cap and the wait between actions. It does not send anything."
+      />
 
       {!data ? (
-        <p className="mt-6">Loading…</p>
+        <p className="mt-6 text-sm text-(--muted)">Loading…</p>
       ) : (
         <>
-          <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
-            <p className="text-xs uppercase tracking-wide text-(--muted)">Account</p>
+          <section className="card mt-6 p-5">
+            <p className="eyebrow">Account</p>
             {data.account ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <p className="font-medium">{data.account.displayName}</p>
@@ -86,14 +86,18 @@ export default function FrequencyPage() {
                   {signal === "restricted" ? "Restricted" : signal === "throttled" ? "Slowed" : statusLabel(data.account.status)}
                 </StatusBadge>
                 {profile ? (
-                  <a href={profile} className="text-sm text-(--ochre)" target="_blank" rel="noreferrer">
+                  <a href={profile} className="text-sm text-(--ochre) hover:underline" target="_blank" rel="noreferrer">
                     {profile.replace("https://www.", "")}
                   </a>
                 ) : null}
               </div>
             ) : (
               <p className="mt-3 text-sm">
-                No LinkedIn account is selected. Connect one in <Link href="/settings">Settings</Link>.
+                No LinkedIn account is selected. Connect one in{" "}
+                <Link href="/settings" className="text-(--ochre) hover:underline">
+                  Settings
+                </Link>
+                .
               </p>
             )}
             {signal === "restricted" ? (
@@ -104,62 +108,62 @@ export default function FrequencyPage() {
             ) : null}
           </section>
 
-          <div className="mt-4 grid gap-px overflow-hidden rounded-xl border border-(--line) bg-(--line) sm:grid-cols-3">
-            <div className="bg-(--paper) px-4 py-3">
+          <div className="stat-grid mt-4 sm:grid-cols-3">
+            <div>
               <p className="text-xs text-(--muted)">Connections</p>
-              <p className="mt-1 text-xl">
+              <p className="mt-1 text-xl font-semibold tracking-tight">
                 {data.connectionsUsed} of {data.connectionCap}
               </p>
               <p className="mt-1 text-xs text-(--muted)">Last 24 hours</p>
             </div>
-            <div className="bg-(--paper) px-4 py-3">
+            <div>
               <p className="text-xs text-(--muted)">Gap</p>
-              <p className="mt-1 text-xl">{data.minGapMinutes} min</p>
+              <p className="mt-1 text-xl font-semibold tracking-tight">{data.minGapMinutes} min</p>
               <p className="mt-1 text-xs text-(--muted)">
                 {data.lastActionLabel
                   ? `Last action ${data.lastActionLabel}. ${data.gapOpen ? "The gap is clear." : "Waiting out the gap."}`
                   : "No action yet."}
               </p>
             </div>
-            <div className="bg-(--paper) px-4 py-3">
+            <div>
               <p className="text-xs text-(--muted)">Next check</p>
-              <p className="mt-1 text-xl">{data.nextCheckLabel}</p>
+              <p className="mt-1 text-xl font-semibold tracking-tight">{data.nextCheckLabel}</p>
               <p className="mt-1 text-xs text-(--muted)">Sends are checked once a day.</p>
             </div>
           </div>
 
-          <section className="mt-6 rounded-2xl border border-(--line) bg-(--panel) p-5">
-            <h2 className="text-xl">Limits</h2>
+          <section className="card mt-6 p-5">
+            <h2 className="text-lg">Limits</h2>
             <div className="mt-4 flex flex-wrap gap-6">
-              <label className="text-sm">
+              <label className="label">
                 Connection cap
                 <input
                   type="number"
                   min={0}
                   max={1000}
-                  className="mt-2 block w-28 rounded-md border border-(--line) bg-(--paper) px-3 py-2"
+                  className="field mt-1.5 block w-28"
                   value={cap}
                   onChange={(e) => setCap(e.target.value)}
                 />
-                <span className="mt-1 block text-(--muted)">In the last 24 hours</span>
+                <span className="mt-1 block font-normal text-(--muted)">In the last 24 hours</span>
               </label>
-              <label className="text-sm">
+              <label className="label">
                 Minimum gap
                 <input
                   type="number"
                   min={0}
                   max={1440}
-                  className="mt-2 block w-28 rounded-md border border-(--line) bg-(--paper) px-3 py-2"
+                  className="field mt-1.5 block w-28"
                   value={gap}
                   onChange={(e) => setGap(e.target.value)}
                 />
-                <span className="mt-1 block text-(--muted)">Minutes between actions</span>
+                <span className="mt-1 block font-normal text-(--muted)">Minutes between actions</span>
               </label>
             </div>
             <button
               type="button"
               disabled={saving}
-              className="btn-primary mt-4 rounded-full px-4 py-2 disabled:opacity-40"
+              className="btn btn-primary mt-5"
               onClick={() => void save()}
             >
               {saving ? "Saving…" : "Save"}

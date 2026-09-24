@@ -135,7 +135,7 @@ export function SequenceEditor({
                 <button
                   type="button"
                   disabled={!editable}
-                  className="flex h-7 w-7 items-center justify-center rounded-full border border-(--line) text-(--muted) hover:text-(--ink) disabled:opacity-40"
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-(--line) bg-(--panel) text-(--muted) hover:border-(--ochre) hover:text-(--ochre) disabled:opacity-40"
                   onClick={() => onAdd(index, "message")}
                   aria-label="Add stage"
                 >
@@ -143,13 +143,15 @@ export function SequenceEditor({
                 </button>
               </div>
             ) : null}
-            <section className="rounded-xl border border-(--line) bg-(--panel) p-5">
+            <section className="card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-(--muted)">{index + 1}.</p>
+                  <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-(--tint) text-xs font-semibold text-(--ochre)">
+                    {index + 1}
+                  </span>
                   {editable ? (
                     <select
-                      className="rounded-md border border-(--line) bg-(--paper) px-2 py-1 text-sm font-medium"
+                      className="field w-auto px-2 py-1 font-medium"
                       value={kindOf(step)}
                       onChange={(e) => patch(index, applyKind(e.target.value as Kind))}
                     >
@@ -166,13 +168,13 @@ export function SequenceEditor({
                         type="number"
                         min={0}
                         disabled={!editable}
-                        className="w-14 rounded-md border border-(--line) bg-(--paper) px-2 py-1 text-(--ink)"
+                        className="field w-16 px-2 py-1"
                         value={parts.value}
                         onChange={(e) => patch(index, { delayHours: toHours(Number(e.target.value) || 0, parts.unit) })}
                       />
                       <select
                         disabled={!editable}
-                        className="rounded-md border border-(--line) bg-(--paper) px-2 py-1"
+                        className="field w-auto px-2 py-1"
                         value={parts.unit}
                         onChange={(e) => patch(index, { delayHours: toHours(parts.value, e.target.value as "h" | "d") })}
                       >
@@ -203,7 +205,7 @@ export function SequenceEditor({
                   </p>
                   <textarea
                     disabled={!editable}
-                    className="mt-2 h-40 w-full rounded-md border border-(--line) bg-(--paper) p-3 text-sm"
+                    className="field mt-2 h-40 p-3"
                     value={step.bodyTemplate}
                     onChange={(e) => patch(index, { bodyTemplate: e.target.value })}
                   />
@@ -217,7 +219,7 @@ export function SequenceEditor({
                         key={field}
                         type="button"
                         disabled={!editable}
-                        className="rounded-md border border-(--line) px-2 py-0.5 text-xs text-(--muted) hover:text-(--ink) disabled:opacity-40"
+                        className="rounded-full border border-(--line) bg-(--panel) px-2 py-0.5 text-xs text-(--muted) hover:border-(--ochre) hover:text-(--ochre) disabled:opacity-40"
                         onClick={() => insertVar(index, field)}
                       >
                         {`{{${field}}}`}
@@ -228,7 +230,7 @@ export function SequenceEditor({
                     LinkedIn image URL (optional)
                     <input
                       disabled={!editable}
-                      className="mt-1 w-full rounded-md border border-(--line) bg-(--paper) px-3 py-2 text-sm"
+                      className="field mt-1.5"
                       placeholder="https://…"
                       value={step.imageUrl ?? ""}
                       onChange={(e) => patch(index, { imageUrl: e.target.value || null })}
@@ -256,7 +258,7 @@ export function SequenceEditor({
                       </button>
                     </span>
                   </div>
-                  <div className="mt-2 min-h-40 rounded-md border border-(--line) bg-(--input) p-3 text-sm whitespace-pre-wrap">
+                  <div className="mt-2 min-h-40 rounded-2xl bg-(--tint) p-4 text-sm whitespace-pre-wrap">
                     {previewSubject ? (
                       <>
                         <p className="text-(--muted)">Subject: {previewSubject}</p>
@@ -275,14 +277,14 @@ export function SequenceEditor({
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <button
             type="button"
-            className="rounded-md border border-(--line) px-3 py-1.5 text-sm"
+            className="btn btn-sm btn-quiet"
             onClick={() => onAdd(steps.length, "connection")}
           >
             + Connection
           </button>
           <button
             type="button"
-            className="rounded-md border border-(--line) px-3 py-1.5 text-sm"
+            className="btn btn-sm btn-quiet"
             onClick={() => onAdd(steps.length, "message")}
           >
             + LinkedIn message

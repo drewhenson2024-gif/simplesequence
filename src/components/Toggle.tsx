@@ -25,9 +25,9 @@ export function Toggle({
       className={`inline-flex min-w-24 items-center justify-center rounded-full px-4 py-1.5 text-sm font-medium ${
         on
           ? danger
-            ? "bg-(--danger) text-(--paper)"
-            : "bg-(--ok) text-(--paper)"
-          : "border border-(--line) text-(--muted)"
+            ? "bg-(--danger) text-white"
+            : "bg-(--ok) text-white"
+          : "border border-(--line) bg-(--panel) text-(--muted) hover:bg-(--input)"
       } disabled:opacity-40`}
     >
       {on ? onLabel : offLabel}
@@ -44,12 +44,12 @@ export function StatusBadge({
 }) {
   const cls =
     tone === "ok"
-      ? "bg-(--ok) text-(--paper)"
+      ? "bg-[#e7f5ec] text-(--ok)"
       : tone === "danger"
-        ? "bg-(--danger) text-(--paper)"
+        ? "bg-[#fdecec] text-(--danger)"
         : tone === "wait"
-          ? "border border-(--ochre) text-(--ochre)"
-          : "border border-(--line) text-(--muted)";
+          ? "bg-(--tint) text-(--ochre)"
+          : "bg-(--input) text-(--muted) ring-1 ring-inset ring-(--line)";
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>{children}</span>;
 }
 

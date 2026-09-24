@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
 import { statusLabel } from "@/lib/ui/display";
 import { scheduleDelete, subscribePendingDelete } from "@/lib/client/pendingDelete";
@@ -39,15 +39,15 @@ export default function CampaignsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-2xl tracking-tight">Sequences</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
-        Create a draft, add people, then press Start. A sequence is a LinkedIn connection followed by messages. Stats stay on Analytics, and suggestions save as a new draft.
-      </p>
-      <div className="mt-6 flex flex-wrap items-end gap-3 rounded-2xl border border-(--line) bg-(--panel) p-5">
+      <PageHeader
+        title="Sequences"
+        lede="Create a draft, add people, then press Start. A sequence is a LinkedIn connection followed by messages. Stats stay on Analytics, and suggestions save as a new draft."
+      />
+      <div className="card mt-6 flex flex-wrap items-end gap-3 p-5">
         <div className="min-w-64 flex-1">
-          <label className="text-sm text-(--muted)">Sequence name</label>
+          <label className="label">Sequence name</label>
           <input
-            className="mt-1 block w-full rounded-lg border border-(--line) bg-(--input) px-3 py-2"
+            className="field mt-1.5"
             placeholder="Restaurant ops outreach"
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -57,30 +57,26 @@ export default function CampaignsPage() {
           type="button"
           disabled={!name.trim()}
           onClick={() => void create()}
-          className="btn-primary rounded-full px-4 py-2 disabled:opacity-40"
+          className="btn btn-primary"
         >
           Create draft
         </button>
       </div>
       <ul className="mt-6 space-y-2">
         {!loaded ? (
-          <li className="rounded-2xl border border-(--line) bg-(--panel) px-4 py-3 text-sm text-(--muted)">
-            Loading…
-          </li>
+          <li className="card px-4 py-3 text-sm text-(--muted)">Loading…</li>
         ) : null}
         {loaded && visible.length === 0 ? (
-          <li className="rounded-2xl border border-dashed border-(--line) px-4 py-8 text-sm text-(--muted)">
-            No sequences yet. Name one above to start a draft.
-          </li>
+          <li className="empty">No sequences yet. Name one above to start a draft.</li>
         ) : null}
         {error ? <li className="text-sm text-(--danger)">{error}</li> : null}
         {visible.map((c) => (
-          <li key={c.id} className="flex items-stretch gap-2">
+          <li key={c.id} className="flex items-center gap-2">
             <Link
               href={`/campaigns/${c.id}`}
-              className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-2xl border border-(--line) bg-(--panel) px-4 py-3"
+              className="card card-link flex min-w-0 flex-1 items-center justify-between gap-3 px-4 py-3"
             >
-              <span className="font-medium">{c.name}</span>
+              <span className="truncate font-medium">{c.name}</span>
               <span className="flex shrink-0 items-center gap-3 text-sm text-(--muted)">
                 <StatusBadge
                   tone={
@@ -101,7 +97,7 @@ export default function CampaignsPage() {
             {c.status === "draft" ? (
               <button
                 type="button"
-                className="btn-quiet-danger shrink-0 rounded-2xl px-4 text-sm"
+                className="btn btn-sm btn-quiet-danger"
                 onClick={() => scheduleDelete({ kind: "campaign", id: c.id, name: c.name })}
               >
                 Delete

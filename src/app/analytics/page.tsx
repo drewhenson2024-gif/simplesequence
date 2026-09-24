@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AppShell } from "@/components/AppShell";
+import { AppShell, PageHeader } from "@/components/AppShell";
 import { SoonBadge, StatusBadge } from "@/components/Toggle";
 import { statusLabel } from "@/lib/ui/display";
 import { useAnalytics } from "@/lib/client/tabCaches";
@@ -43,7 +43,7 @@ function VolumeChart({ days }: { days: Array<{ date: string; sent: number; skipp
                 title={`${day.date}: ${day.sent} sent${day.skipped ? `, ${day.skipped} skipped` : ""}`}
                 className="flex min-w-0 flex-1 flex-col justify-end"
               >
-                <div className="w-full bg-(--line)" style={{ height: `${height}%` }} />
+                <div className="w-full rounded-t-sm bg-(--ochre)" style={{ height: `${height}%` }} />
               </div>
             );
           })}
@@ -96,14 +96,14 @@ export default function AnalyticsPage() {
 
   return (
     <AppShell>
-      <h1 className="text-2xl tracking-tight">Analytics</h1>
-      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-(--muted)">
-        LinkedIn sends and replies from sequences that have actually run. Empty days stay at zero. Suggestions save as a new draft and never change a sequence that is already running.
-      </p>
+      <PageHeader
+        title="Analytics"
+        lede="LinkedIn sends and replies from sequences that have actually run. Empty days stay at zero. Suggestions save as a new draft and never change a sequence that is already running."
+      />
 
       {error ? <p className="mt-4 text-sm text-(--danger)">{error}</p> : null}
 
-      <div className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-(--line) bg-(--line) sm:grid-cols-3 lg:grid-cols-6">
+      <div className="stat-grid mt-6 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
         {[
           ["Enrolled", loaded ? (totals?.enrolled ?? 0) : "…"],
           ["Sent", loaded ? (totals?.sent ?? 0) : "…"],
@@ -112,15 +112,15 @@ export default function AnalyticsPage() {
           ["Reply rate", loaded && totals ? rateLabel(totals.replyRate, totals.sent) : "…"],
           ["Skipped", loaded ? (totals?.skipped ?? 0) : "…"],
         ].map(([label, value]) => (
-          <div key={label} className="bg-(--paper) px-4 py-3">
+          <div key={label}>
             <p className="text-xs text-(--muted)">{label}</p>
-            <p className="mt-1 text-xl">{value}</p>
+            <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
           </div>
         ))}
       </div>
 
-      <section className="mt-8">
-        <p className="text-sm text-(--muted)">LinkedIn volume</p>
+      <section className="card mt-6 p-5">
+        <p className="eyebrow">LinkedIn volume</p>
         <div className="mt-3">
           {loaded ? (
             <VolumeChart days={volume} />
@@ -130,20 +130,20 @@ export default function AnalyticsPage() {
         </div>
       </section>
 
-      <div className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-        <section>
+      <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <section className="card p-5">
           <h2 className="text-lg">Sequences</h2>
           <p className="mt-1 text-sm text-(--muted)">Every sequence, including drafts.</p>
           {!loaded ? (
             <p className="mt-4 text-sm text-(--muted)">Loading…</p>
           ) : data?.runs.length ? (
-            <ul className="mt-4 divide-y divide-(--line) rounded-xl border border-(--line)">
+            <ul className="mt-4 divide-y divide-(--line) overflow-hidden rounded-xl border border-(--line)">
               {data.runs.map((run) => (
                 <li key={run.id}>
                   <button
                     type="button"
                     onClick={() => setSelectedId(run.id)}
-                    className={`w-full px-4 py-3 text-left ${run.id === selectedId ? "bg-(--input)" : "hover:bg-(--input)"}`}
+                    className={`w-full px-4 py-3 text-left ${run.id === selectedId ? "bg-(--tint)" : "hover:bg-(--input)"}`}
                   >
                     <span className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium">{run.name}</span>
@@ -158,21 +158,19 @@ export default function AnalyticsPage() {
               ))}
             </ul>
           ) : (
-            <p className="mt-4 rounded-xl border border-(--line) px-4 py-3 text-sm text-(--muted)">
-              No sequences yet. Create one and it will show here, at zero, until something sends.
-            </p>
+            <p className="empty mt-4">No sequences yet. Create one and it will show here, at zero, until something sends.</p>
           )}
         </section>
 
-        <section>
+        <section className="card p-5">
           {selected ? (
             <>
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-(--muted)">Selected sequence</p>
+                  <p className="eyebrow">Selected sequence</p>
                   <h2 className="mt-1 text-lg">{selected.name}</h2>
                 </div>
-                <Link href={`/campaigns/${selected.id}`} className="btn-primary rounded-md px-4 py-1.5 text-sm">
+                <Link href={`/campaigns/${selected.id}`} className="btn btn-sm btn-quiet">
                   Open sequence
                 </Link>
               </div>
@@ -183,7 +181,7 @@ export default function AnalyticsPage() {
 
               <div className="mt-4 overflow-auto rounded-xl border border-(--line)">
                 <table className="w-full text-left text-sm">
-                  <thead className="text-(--muted)">
+                  <thead className="bg-(--input) text-(--muted)">
                     <tr>
                       <th className="px-3 py-2 font-medium">Step</th>
                       <th className="px-3 py-2 font-medium">Sent</th>
@@ -232,14 +230,14 @@ export default function AnalyticsPage() {
                 <h3 className="text-sm font-medium">What worked / what didn’t</h3>
                 <ul className="mt-2 space-y-2">
                   {selected.insights.map((line) => (
-                    <li key={line} className="rounded-lg bg-(--input) px-4 py-3 text-sm">
+                    <li key={line} className="rounded-xl bg-(--input) px-4 py-3 text-sm ring-1 ring-inset ring-(--line)">
                       {line}
                     </li>
                   ))}
                 </ul>
               </div>
 
-              <div className="mt-6 rounded-xl border border-(--line) p-4">
+              <div className="mt-6 rounded-xl border border-(--line) bg-(--input) p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-medium">Suggestions</h3>
                 </div>
@@ -250,7 +248,7 @@ export default function AnalyticsPage() {
                   <button
                     type="button"
                     disabled={applyBusy}
-                    className="btn-primary rounded-md px-4 py-2 text-sm"
+                    className="btn btn-primary"
                     onClick={() => void saveDraft()}
                   >
                     {applyBusy ? "Saving draft…" : "Save as new draft"}
@@ -258,7 +256,7 @@ export default function AnalyticsPage() {
                   <button
                     type="button"
                     disabled
-                    className="inline-flex items-center gap-2 rounded-md border border-(--line) px-4 py-2 text-sm text-(--muted)"
+                    className="btn btn-quiet text-(--muted) disabled:opacity-100"
                   >
                     AI draft from these stats
                     <SoonBadge />
