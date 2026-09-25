@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
+import { frequencyCategories } from "@/lib/domain/linkedinFrequency";
 import { planLabel } from "@/lib/domain/linkedinPlan";
+
+const LEVELS = ["normal", "premium", "sales_navigator", "recruiter"] as const;
 import { statusLabel } from "@/lib/ui/display";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 
@@ -145,6 +148,38 @@ export default function FrequencyPage() {
                   </div>
                 );
               })}
+            </div>
+          </section>
+
+          <section className="card mt-6 p-5">
+            <h2 className="text-lg">Suggested amounts by level</h2>
+            <p className="mt-1 text-sm text-(--muted)">Each amount reads day · week · month. This account’s level is highlighted.</p>
+            <div className="mt-4 overflow-x-auto">
+              <div className="grid min-w-[40rem] grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 text-xs text-(--muted)">
+                <span>Action</span>
+                {LEVELS.map((level) => (
+                  <span key={level} className={level === (data.account?.linkedinPlan ?? "normal") ? "font-semibold text-(--ochre)" : ""}>
+                    {planLabel(level)}
+                  </span>
+                ))}
+              </div>
+              {frequencyCategories("normal").map((base) => (
+                <div
+                  key={base.id}
+                  className="mt-3 grid min-w-[40rem] grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))] gap-3 border-t border-(--line) pt-3 text-sm"
+                >
+                  <p className="font-medium">{base.label}</p>
+                  {LEVELS.map((level) => {
+                    const row = frequencyCategories(level).find((item) => item.id === base.id);
+                    const none = !row || (row.day === 0 && row.week === 0 && row.month === 0);
+                    return (
+                      <p key={level} className={none ? "text-(--muted)" : ""}>
+                        {none ? "Does not send" : `${row.day} · ${row.week} · ${row.month}`}
+                      </p>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </section>
 
