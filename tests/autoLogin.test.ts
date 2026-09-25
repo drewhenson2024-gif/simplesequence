@@ -76,9 +76,11 @@ describe("authenticator codes and sealed logins", () => {
   });
 
   it("opens only what it sealed", () => {
-    const sealed = sealLogin({ username: "a@b.co", password: "pw", totpSecret: SECRET });
-    expect(sealed).not.toContain("pw");
-    expect(openLogin(sealed)).toEqual({ username: "a@b.co", password: "pw", totpSecret: SECRET });
+    const password = "correct-horse-battery-staple";
+    const sealed = sealLogin({ username: "a@b.co", password, totpSecret: SECRET });
+    expect(sealed).not.toContain(password);
+    expect(sealed).not.toContain(SECRET);
+    expect(openLogin(sealed)).toEqual({ username: "a@b.co", password, totpSecret: SECRET });
   });
 });
 

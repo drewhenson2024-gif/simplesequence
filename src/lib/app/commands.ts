@@ -34,7 +34,9 @@ import {
   FREQUENCY_DAY_MS,
   FREQUENCY_MONTH_MS,
   FREQUENCY_WEEK_MS,
+  averageGapMs,
   frequencyCategories,
+  randomGapMs,
   type FrequencyAmounts,
   type FrequencyCategoryId,
 } from "../domain/linkedinFrequency";
@@ -2151,12 +2153,16 @@ export async function getFrequency(ctx: AppContext) {
           linkedinPlan: sender.linkedinPlan,
         }
       : null,
-    categories: frequencyCategories(sender?.linkedinPlan).map((row) => ({
-      ...row,
-      usedDay: usage[row.id].day,
-      usedWeek: usage[row.id].week,
-      usedMonth: usage[row.id].month,
-    })),
+    categories: frequencyCategories(sender?.linkedinPlan).map((row) => {
+      const average = averageGapMs(row.day);
+      return {
+        ...row,
+        usedDay: usage[row.id].day,
+        usedWeek: usage[row.id].week,
+        usedMonth: usage[row.id].month,
+        averageGapMinutes: average == null ? null : Math.round(average / 60000),
+      };
+    }),
     minGapMinutes: pace.minGapMinutes,
     lastActionLabel: lastAt ? formatWhen(new Date(lastAt), pace.timezone) : null,
     gapOpen: !lastAt || now.getTime() - lastAt >= pace.minGapMs,
@@ -2245,16 +2251,39 @@ async function categoryUsage(ctx: AppContext, senderId: string): Promise<Record<
   return totals;
 }
 
-async function categoryHasRoom(
-  ctx: AppContext,
-  job: { senderId: string; campaignId: string; stepIndex: number },
-): Promise<boolean> {
+async function lastCategoryActionAt(ctx: AppContext, senderId: string, id: FrequencyCategoryId): Promise<number | null> {
+  const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.senderId, senderId));
+  const touched = jobs.filter(
+    (job) => job.claimedAt && ["sent", "failed", "claimed", "in_progress"].includes(job.status),
+  );
+  if (touched.length === 0) return null;
+  const campaignIds = [...new Set(touched.map((job) => job.campaignId))];
+  const steps = await ctx.db
+    .select()
+    .from(tables.sequenceSteps)
+    .where(inArray(tables.sequenceSteps.campaignId, campaignIds));
+  let latest = 0;
+  for (const job of touched) {
+    const campaignSteps = steps.filter((step) => step.campaignId === job.campaignId);
+    const step = campaignSteps.find((row) => row.stepIndex === job.stepIndex);
+    if (!step) continue;
+    const kind = categoryForStep({
+      action: step.action,
+      bodyTemplate: step.bodyTemplate,
+      followsConnection: campaignSteps.some((row) => row.stepIndex < step.stepIndex && row.action === "connection"),
+    });
+    if (kind === id) latest = Math.max(latest, new Date(job.claimedAt!).getTime());
+  }
+  return latest || null;
+}
+
+async function jobCategory(ctx: AppContext, job: { senderId: string; campaignId: string; stepIndex: number }) {
   const steps = await ctx.db
     .select()
     .from(tables.sequenceSteps)
     .where(eq(tables.sequenceSteps.campaignId, job.campaignId));
   const step = steps.find((row) => row.stepIndex === job.stepIndex);
-  if (!step) return true;
+  if (!step) return null;
   const [sender] = await ctx.db
     .select()
     .from(tables.senderAccounts)
@@ -2265,10 +2294,39 @@ async function categoryHasRoom(
     bodyTemplate: step.bodyTemplate,
     followsConnection: steps.some((row) => row.stepIndex < step.stepIndex && row.action === "connection"),
   });
-  const allowance = frequencyCategories(sender?.linkedinPlan).find((row) => row.id === id);
-  if (!allowance || (allowance.day === 0 && allowance.week === 0 && allowance.month === 0)) return true;
+  const allowance = frequencyCategories(sender?.linkedinPlan).find((row) => row.id === id) ?? null;
+  return { id, allowance };
+}
+
+async function categoryReady(
+  ctx: AppContext,
+  job: { id: string; senderId: string; campaignId: string; stepIndex: number },
+): Promise<boolean> {
+  const kind = await jobCategory(ctx, job);
+  if (!kind?.allowance) return true;
+  const { id, allowance } = kind;
+  if (allowance.day === 0 && allowance.week === 0 && allowance.month === 0) return true;
   const used = (await categoryUsage(ctx, job.senderId))[id];
-  return used.day < allowance.day && used.week < allowance.week && used.month < allowance.month;
+  if (used.day >= allowance.day || used.week >= allowance.week || used.month >= allowance.month) return false;
+  const gap = randomGapMs(allowance.day, job.id);
+  const last = await lastCategoryActionAt(ctx, job.senderId, id);
+  if (gap == null || last == null) return true;
+  return ctx.clock.now().getTime() - last >= gap;
+}
+
+async function holdCategory(ctx: AppContext, job: { id: string; senderId: string; campaignId: string; stepIndex: number }, until: Date) {
+  const kind = await jobCategory(ctx, job);
+  if (!kind) return;
+  const pending = await ctx.db
+    .select()
+    .from(tables.sendJobs)
+    .where(and(eq(tables.sendJobs.senderId, job.senderId), eq(tables.sendJobs.status, "pending")));
+  for (const other of pending) {
+    if (other.id === job.id || new Date(other.dueAt).getTime() >= until.getTime()) continue;
+    const otherKind = await jobCategory(ctx, other);
+    if (otherKind?.id !== kind.id) continue;
+    await ctx.db.update(tables.sendJobs).set({ dueAt: iso(until) }).where(eq(tables.sendJobs.id, other.id));
+  }
 }
 
 async function paceOf(ctx: AppContext) {
@@ -2314,7 +2372,15 @@ async function accountBudgetFor(
   senderId: string,
   status: string,
   senderSignal: "throttled" | "restricted" | null,
-  jobs: { status: string; dueAt: string; stepIndex: number; action: string | null; error?: string | null }[],
+  jobs: {
+    id: string;
+    campaignId: string;
+    status: string;
+    dueAt: string;
+    stepIndex: number;
+    action: string | null;
+    error?: string | null;
+  }[],
   steps: Array<{ stepIndex: number; action: string; bodyTemplate: string }>,
   plan: string | null | undefined,
 ) {
@@ -2344,6 +2410,13 @@ async function accountBudgetFor(
       note = "This step will not send on this account.";
     } else if (bound.used >= bound.allowance) {
       note = `The next ${allowance.label.toLowerCase()} waits until one leaves ${bound.periodLabel}.`;
+    } else if (
+      due.getTime() <= now.getTime() &&
+      !(await categoryReady(ctx, { id: next.id, senderId, campaignId: next.campaignId, stepIndex: next.stepIndex }))
+    ) {
+      const gap = randomGapMs(allowance.day, next.id) ?? 0;
+      const last = (await lastCategoryActionAt(ctx, senderId, categoryId)) ?? now.getTime();
+      note = `The next ${allowance.label.toLowerCase()} waits for its random gap, until ${formatWhen(new Date(last + gap), pace.timezone)}.`;
     } else if (due.getTime() > now.getTime()) {
       note = `The next step is due ${formatWhen(due, pace.timezone)}.`;
     } else if (!(await senderGapOpen(ctx, senderId, pace.minGapMs))) {
@@ -2406,7 +2479,7 @@ export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boole
   for (const job of due) {
     if (claimedSenders.has(job.senderId) || (await senderHasInFlight(ctx, job.senderId))) continue;
     if (!(await senderGapOpen(ctx, job.senderId, pace.minGapMs))) continue;
-    if (!(await categoryHasRoom(ctx, job))) continue;
+    if (!(await categoryReady(ctx, job))) continue;
     const [sender] = await ctx.db
       .select()
       .from(tables.senderAccounts)
@@ -2622,6 +2695,7 @@ async function executeJob(ctx: AppContext, jobId: string): Promise<"held" | void
     if (signal === "quota") {
       const due = new Date(ctx.clock.now().getTime() + LINKEDIN_INVITE_ROLLING_MS);
       await parkJob(ctx, jobId, enrollment.id, due, "invite limit");
+      await holdCategory(ctx, job, due);
       await audit(ctx, "invite_quota", { jobId, senderId: job.senderId });
       return;
     }

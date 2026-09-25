@@ -49,6 +49,28 @@ export function frequencyCategories(plan: string | null | undefined): Array<{
   return rows.map((row) => ({ ...row, label: LABELS[row.id] }));
 }
 
+function unitFraction(key: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 0x100000000;
+}
+
+/** Average gap that spreads a day's amount across 24 hours. */
+export function averageGapMs(perDay: number): number | null {
+  if (perDay <= 0) return null;
+  return FREQUENCY_DAY_MS / perDay;
+}
+
+/** Random gap between half and one and a half times the average, fixed per job so a retry does not reroll it. */
+export function randomGapMs(perDay: number, key: string): number | null {
+  const average = averageGapMs(perDay);
+  if (average == null) return null;
+  return Math.round(average * (0.5 + unitFraction(key)));
+}
+
 export function categoryForStep(input: {
   action: string;
   bodyTemplate: string;

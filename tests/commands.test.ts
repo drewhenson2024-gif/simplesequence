@@ -446,11 +446,13 @@ describe("commands", () => {
     advance(20 * 60 * 1000);
     for (let i = 0; i < 5; i += 1) {
       await tick(ctx, { ignoreWorkingHours: true });
-      advance(2 * 60 * 1000);
+      advance(8 * 60 * 60 * 1000);
     }
     expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(5);
-    const extra = await tick(ctx, { ignoreWorkingHours: true });
-    expect(extra.processed).toBe(0);
+    for (let i = 0; i < 5; i += 1) {
+      await tick(ctx, { ignoreWorkingHours: true });
+      advance(8 * 60 * 60 * 1000);
+    }
     expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(5);
   });
 

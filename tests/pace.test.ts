@@ -52,7 +52,7 @@ describe("rolling account pace", () => {
     expect(result.processed).toBe(1);
   });
 
-  it("holds a second action until the minimum gap has passed", async () => {
+  it("holds the next connection for a random gap sized to the daily amount", async () => {
     const { ctx, advance } = await testApp();
     const list = await importList(ctx, "gap", `${csv("Ada", "ada").trim()}\nGrace,https://www.linkedin.com/in/grace\n`);
     const campaign = await createCampaign(ctx, { name: "gap", steps: stepsForTemplate() });
@@ -60,9 +60,36 @@ describe("rolling account pace", () => {
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
     expect((await tick(ctx)).processed).toBe(1);
-    expect((await tick(ctx)).processed).toBe(0);
     advance(2 * 60 * 1000);
+    expect((await tick(ctx)).processed).toBe(0);
+    advance(2 * 60 * 60 * 1000);
+    expect((await tick(ctx)).processed).toBe(0);
+    advance(6 * 60 * 60 * 1000);
     expect((await tick(ctx)).processed).toBe(1);
+  });
+
+  it("stops trying other connections after LinkedIn refuses one", async () => {
+    const { ctx, advance } = await testApp();
+    const refusing = new MockUnipile();
+    let refusals = 0;
+    refusing.invite = async () => {
+      refusals += 1;
+      throw new Error('Unipile 422 /api/v1/users/invite: {"type":"errors/cannot_resend_yet"}');
+    };
+    ctx.unipile = refusing;
+    const list = await importList(
+      ctx,
+      "refuse",
+      `${csv("Ada", "ada").trim()}\nGrace,https://www.linkedin.com/in/grace\nLin,https://www.linkedin.com/in/lin\n`,
+    );
+    const campaign = await createCampaign(ctx, { name: "refuse", steps: stepsForTemplate() });
+    await addLeadsToCampaign(ctx, campaign.id, { listId: list });
+    await startCampaign(ctx, campaign.id);
+    for (let i = 0; i < 10; i += 1) {
+      advance(30 * 60 * 1000);
+      await tick(ctx);
+    }
+    expect(refusals).toBe(1);
   });
 
   it("lets a higher-priority sequence take the slot", async () => {
@@ -120,6 +147,7 @@ describe("rolling account pace", () => {
       .update(sendJobs)
       .set({ claimedAt: new Date(ctx.clock.now().getTime() - 31 * 24 * 60 * 60 * 1000).toISOString() })
       .where(eq(sendJobs.id, "job_cap_0"));
+    advance(8 * 60 * 60 * 1000);
     expect((await tick(ctx)).processed).toBe(1);
   });
 
@@ -139,8 +167,8 @@ describe("rolling account pace", () => {
     const duringGap = await getCampaign(ctx, campaign.id);
     expect(duringGap.accountBudget?.used).toBe(1);
     expect(duringGap.accountBudget?.allowance).toBe(5);
-    expect(duringGap.accountBudget?.note).toContain("2-minute gap");
-    advance(2 * 60 * 1000);
+    expect(duringGap.accountBudget?.note).toContain("random gap");
+    advance(8 * 60 * 60 * 1000);
     const waitingOnCheck = await getCampaign(ctx, campaign.id);
     expect(waitingOnCheck.accountBudget?.note).toContain("A check will send");
     const checked = await runCheck(ctx);
@@ -182,6 +210,9 @@ describe("rolling account pace", () => {
     expect(noted).toMatchObject({ day: 5, week: 5, month: 5, usedMonth: 1 });
     expect(plain).toMatchObject({ day: 21, week: 150, month: 600, usedMonth: 0 });
     expect(before.gapOpen).toBe(true);
+    expect(noted?.averageGapMinutes).toBe(288);
+    expect(plain?.averageGapMinutes).toBe(69);
+    advance(8 * 60 * 60 * 1000);
     expect((await tick(ctx)).processed).toBe(1);
   });
 

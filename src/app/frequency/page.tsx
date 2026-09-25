@@ -20,7 +20,14 @@ type FrequencyCategory = {
   usedDay: number;
   usedWeek: number;
   usedMonth: number;
+  averageGapMinutes: number | null;
 };
+
+function gapLabel(minutes: number | null): string | null {
+  if (minutes == null) return null;
+  if (minutes < 90) return `About every ${minutes} minutes, varied at random`;
+  return `About every ${Math.round(minutes / 6) / 10} hours, varied at random`;
+}
 
 type Frequency = {
   account: {
@@ -129,7 +136,12 @@ export default function FrequencyPage() {
                 const blocked = row.day === 0 && row.week === 0 && row.month === 0;
                 return (
                   <div key={row.id} className="mt-3 grid min-w-[32rem] grid-cols-4 gap-3 border-t border-(--line) pt-3 text-sm">
-                    <p className="font-medium">{row.label}</p>
+                    <div>
+                      <p className="font-medium">{row.label}</p>
+                      {!blocked && gapLabel(row.averageGapMinutes) ? (
+                        <p className="mt-0.5 text-xs text-(--muted)">{gapLabel(row.averageGapMinutes)}</p>
+                      ) : null}
+                    </div>
                     {blocked ? (
                       <p className="col-span-3 text-(--muted)">This account does not send this.</p>
                     ) : (
@@ -186,7 +198,8 @@ export default function FrequencyPage() {
           <section className="card mt-6 p-5">
             <h2 className="text-lg">Check</h2>
             <p className="mt-2 text-sm text-(--muted)">
-              Actions are spaced {data.minGapMinutes} minutes apart.
+              Each kind of action waits a random gap, sized so the day’s amount is spread across 24 hours. Any two actions
+              are at least {data.minGapMinutes} minutes apart.
               {data.lastActionLabel
                 ? ` Last action ${data.lastActionLabel}. ${data.gapOpen ? "The gap is clear." : "Waiting out the gap."}`
                 : " No action yet."}
