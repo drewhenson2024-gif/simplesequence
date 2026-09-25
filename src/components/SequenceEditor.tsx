@@ -129,11 +129,28 @@ export function SequenceEditor({
 
   return (
     <div className="min-w-0">
-      <p className="mb-4 text-sm text-(--muted)">
-        {allowance.sends
-          ? `This sequence can send ${allowance.day} a day, ${allowance.week} a week, and ${allowance.month} a month. That comes from ${allowance.limitedBy}.`
-          : "This sequence will not send on this account."}
-      </p>
+      <section className="mb-4">
+        <p className="eyebrow">This sequence can send</p>
+        {allowance.sends ? (
+          <>
+            <div className="stat-grid mt-3 grid-cols-3">
+              {[
+                ["Day", allowance.day],
+                ["Week", allowance.week],
+                ["Month", allowance.month],
+              ].map(([label, value]) => (
+                <div key={String(label)}>
+                  <p className="text-xs text-(--muted)">{label}</p>
+                  <p className="mt-1 text-xl font-semibold tracking-tight">{value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-(--muted)">Set by {allowance.limitedBy.toLowerCase()}.</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-(--muted)">This sequence will not send on this account.</p>
+        )}
+      </section>
       {steps.map((step, index) => {
         const parts = delayParts(step.delayHours);
         const previewBody = renderTemplate(step.bodyTemplate, asFields(lead));
