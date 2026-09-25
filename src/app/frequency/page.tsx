@@ -4,8 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { StatusBadge } from "@/components/Toggle";
+import { planLabel } from "@/lib/domain/linkedinPlan";
 import { statusLabel } from "@/lib/ui/display";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
+
+type FrequencyCategory = {
+  id: string;
+  label: string;
+  day: number;
+  week: number;
+  month: number;
+  usedDay: number;
+  usedWeek: number;
+  usedMonth: number;
+};
 
 type Frequency = {
   account: {
@@ -14,9 +26,9 @@ type Frequency = {
     profileUrl: string | null;
     status: string;
     signal: "throttled" | "restricted" | null;
+    linkedinPlan?: string | null;
   } | null;
-  connectionsUsed: number;
-  connectionCap: number;
+  categories: FrequencyCategory[];
   minGapMinutes: number;
   lastActionLabel: string | null;
   gapOpen: boolean;
@@ -25,11 +37,8 @@ type Frequency = {
 
 export default function FrequencyPage() {
   const [data, setData] = useState<Frequency | null>(null);
-  const [cap, setCap] = useState("25");
-  const [gap, setGap] = useState("2");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
 
   useEffect(() => {
@@ -37,33 +46,9 @@ export default function FrequencyPage() {
       .then((res) => res.json())
       .then((body: Frequency) => {
         setData(body);
-        setCap(String(body.connectionCap));
-        setGap(String(body.minGapMinutes));
       })
       .catch(() => setError("Could not load Frequency."));
   }, []);
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    const res = await fetch("/api/frequency", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        connectionCap: Number(cap),
-        minGapMinutes: Number(gap),
-      }),
-    });
-    const body = await res.json();
-    setSaving(false);
-    if (!res.ok) {
-      setError(body.error ?? "Could not save.");
-      return;
-    }
-    setData(body);
-    setCap(String(body.connectionCap));
-    setGap(String(body.minGapMinutes));
-  }
 
   async function checkNow() {
     setChecking(true);
@@ -77,8 +62,6 @@ export default function FrequencyPage() {
       return;
     }
     setData(body);
-    setCap(String(body.connectionCap));
-    setGap(String(body.minGapMinutes));
     setNotice(body.processed > 0 ? "Sent the next action." : "No action was ready.");
   }
 
@@ -89,7 +72,7 @@ export default function FrequencyPage() {
     <AppShell>
       <PageHeader
         title="Frequency"
-        lede="How often this LinkedIn account may act. A sender waits out the gap and sends the next due action while the connection cap has room. Check now does that same send once."
+        lede="How many of each action this account can send. The day, week, and month are set for this LinkedIn level. Check now sends the next due action once."
       />
 
       {!data ? (
@@ -127,76 +110,61 @@ export default function FrequencyPage() {
             ) : null}
           </section>
 
-          <div className="stat-grid mt-4 sm:grid-cols-3">
-            <div>
-              <p className="text-xs text-(--muted)">Connections</p>
-              <p className="mt-1 text-xl font-semibold tracking-tight">
-                {data.connectionsUsed} of {data.connectionCap}
-              </p>
-              <p className="mt-1 text-xs text-(--muted)">Last 24 hours</p>
+          <section className="card mt-6 p-5">
+            <h2 className="text-lg">Suggested amounts</h2>
+            <p className="mt-1 text-sm text-(--muted)">
+              {planLabel(data.account?.linkedinPlan)} account. These amounts are set for that level.
+            </p>
+            <div className="mt-4 overflow-x-auto">
+              <div className="grid min-w-[32rem] grid-cols-4 gap-3 text-xs text-(--muted)">
+                <span>Action</span>
+                <span>Day</span>
+                <span>Week</span>
+                <span>Month</span>
+              </div>
+              {data.categories.map((row) => {
+                const blocked = row.day === 0 && row.week === 0 && row.month === 0;
+                return (
+                  <div key={row.id} className="mt-3 grid min-w-[32rem] grid-cols-4 gap-3 border-t border-(--line) pt-3 text-sm">
+                    <p className="font-medium">{row.label}</p>
+                    {blocked ? (
+                      <p className="col-span-3 text-(--muted)">This account does not send this.</p>
+                    ) : (
+                      <>
+                        <p>
+                          {row.usedDay} of {row.day}
+                        </p>
+                        <p>
+                          {row.usedWeek} of {row.week}
+                        </p>
+                        <p>
+                          {row.usedMonth} of {row.month}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div>
-              <p className="text-xs text-(--muted)">Gap</p>
-              <p className="mt-1 text-xl font-semibold tracking-tight">{data.minGapMinutes} min</p>
-              <p className="mt-1 text-xs text-(--muted)">
-                {data.lastActionLabel
-                  ? `Last action ${data.lastActionLabel}. ${data.gapOpen ? "The gap is clear." : "Waiting out the gap."}`
-                  : "No action yet."}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-(--muted)">Check</p>
-              <button
-                type="button"
-                disabled={checking}
-                className="btn btn-primary mt-2"
-                onClick={() => void checkNow()}
-              >
-                {checking ? "Checking…" : "Check now"}
-              </button>
-              <p className="mt-1 text-xs text-(--muted)">One due action, if the gap is clear and the cap has room.</p>
-            </div>
-          </div>
+          </section>
 
           <section className="card mt-6 p-5">
-            <h2 className="text-lg">Limits</h2>
-            <div className="mt-4 flex flex-wrap gap-6">
-              <label className="label">
-                Connection cap
-                <input
-                  type="number"
-                  min={0}
-                  max={1000}
-                  className="field mt-1.5 block w-28"
-                  value={cap}
-                  onChange={(e) => setCap(e.target.value)}
-                />
-                <span className="mt-1 block font-normal text-(--muted)">In the last 24 hours</span>
-              </label>
-              <label className="label">
-                Minimum gap
-                <input
-                  type="number"
-                  min={0}
-                  max={1440}
-                  className="field mt-1.5 block w-28"
-                  value={gap}
-                  onChange={(e) => setGap(e.target.value)}
-                />
-                <span className="mt-1 block font-normal text-(--muted)">Minutes between actions</span>
-              </label>
-            </div>
+            <h2 className="text-lg">Check</h2>
+            <p className="mt-2 text-sm text-(--muted)">
+              Actions are spaced {data.minGapMinutes} minutes apart.
+              {data.lastActionLabel
+                ? ` Last action ${data.lastActionLabel}. ${data.gapOpen ? "The gap is clear." : "Waiting out the gap."}`
+                : " No action yet."}
+            </p>
             <button
               type="button"
-              disabled={saving}
-              className="btn btn-primary mt-5"
-              onClick={() => void save()}
+              disabled={checking}
+              className="btn btn-primary mt-4"
+              onClick={() => void checkNow()}
             >
-              {saving ? "Saving…" : "Save"}
+              {checking ? "Checking…" : "Check now"}
             </button>
-            <p className="mt-3 max-w-xl text-sm text-(--muted)">
-              One action goes out per check. LinkedIn can still restrict the account.
-            </p>
+            <p className="mt-3 max-w-xl text-sm text-(--muted)">One action goes out per check, while that action’s amount has room.</p>
             {notice ? <p className="mt-3 text-sm text-(--ok)">{notice}</p> : null}
             {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
           </section>

@@ -15,9 +15,9 @@ The homepage is for customers. Feature cards show an in-page example — they mu
 
 ## Core (this is the live work)
 
-People paste or MCP `urls` of LinkedIn profile URLs → import looks up name, title, company, headline, location, and about. A sequence is the actions and the delay between them. A campaign is one sequence plus one people list. Start is on the campaign. The campaign keeps a copy of the steps, so editing the sequence later does not change a campaign that is already sending. Send stays sandbox, working hours, one in-flight, LinkedIn invite daily cap, stop on reply → Outbox → Inbox → Stop lead.
+People paste or MCP `urls` of LinkedIn profile URLs → import looks up name, title, company, headline, location, and about. A sequence is the actions and the delay between them. A campaign is one sequence plus one people list. Start is on the campaign. The campaign keeps a copy of the steps, so editing the sequence later does not change a campaign that is already sending. Send stays sandbox, working hours, one in-flight, the suggested amount for that action, stop on reply → Outbox → Inbox → Stop lead.
 
-An always-on sender waits out the gap and sends one due action while the invite cap has room. Frequency has Check now for the same send. The site stays on Vercel. The sender does not use Vercel cron.
+An always-on sender waits out the gap and sends one due action while that action’s day, week, and month still have room. Frequency shows those amounts for each kind of action. They are set for the account level. Check now does that same send once. The site stays on Vercel. The sender does not use Vercel cron.
 
 Settings shows the connected account as normal, Premium, Sales Navigator, or Recruiter. A message after a connection waits until they accept. A message with no connection is InMail and needs Premium, Sales Navigator, or Recruiter. A normal account does not send that step. A connection note on a free account is about 5 a month. A connection with no note is outside that monthly limit.
 
@@ -29,7 +29,7 @@ We do not search for people. We do not run an in-market Signals watcher. We do n
 
 MCP may draft and may run the rest of the loop (`start_sequence`, inbox reply, analytics, list/sequence rename and delete). MCP may never auto-send as a side effect of import. `apply_learnings` writes a new draft only. `delete_sequence` is draft-only. Connecting LinkedIn is Settings in the browser.
 
-Before creating a sequence through MCP, ask which people list, then which sequence to build. When building the steps, ask which actions and any delay between them. If they name no delay, the next action sends as soon as the gap has passed and the invite cap has room. Before starting, ask which sequence and which people. Wait for the answers.
+Before creating a sequence through MCP, ask which people list, then which sequence to build. When building the steps, ask which actions and any delay between them. If they name no delay, the next action sends as soon as the gap has passed and that action’s suggested amount has room. Before starting, ask which sequence and which people. Wait for the answers.
 
 Never show “stub” on the site.
 

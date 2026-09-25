@@ -1,6 +1,7 @@
 "use client";
 
 import { Switch } from "@/components/Toggle";
+import { sequenceAllowance } from "@/lib/domain/linkedinFrequency";
 import { connectionNoteGuidance, stepRequirement } from "@/lib/domain/linkedinPlan";
 import { renderTemplate, VARIABLE_GROUPS, type LeadFields } from "@/lib/domain/templates";
 
@@ -109,6 +110,7 @@ export function SequenceEditor({
 }) {
   const lead = leads[previewIndex] ?? leads[0] ?? FALLBACK_LEAD;
   const leadCount = Math.max(leads.length, 1);
+  const allowance = sequenceAllowance(linkedinPlan, steps);
 
   function patch(index: number, next: Partial<EditorStep>) {
     onChange(steps.map((step, i) => (i === index ? { ...step, ...next } : step)));
@@ -127,6 +129,11 @@ export function SequenceEditor({
 
   return (
     <div className="min-w-0">
+      <p className="mb-4 text-sm text-(--muted)">
+        {allowance.sends
+          ? `This sequence can send ${allowance.day} a day, ${allowance.week} a week, and ${allowance.month} a month. That comes from ${allowance.limitedBy}.`
+          : "This sequence will not send on this account."}
+      </p>
       {steps.map((step, index) => {
         const parts = delayParts(step.delayHours);
         const previewBody = renderTemplate(step.bodyTemplate, asFields(lead));

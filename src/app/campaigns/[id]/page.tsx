@@ -40,8 +40,10 @@ type Campaign = {
   sequenceName?: string | null;
   listName?: string | null;
   accountBudget?: {
-    connectionsUsed: number;
-    connectionCap: number;
+    categoryLabel: string;
+    used: number;
+    allowance: number;
+    periodLabel: string;
     note: string | null;
   } | null;
   jobs?: Array<{

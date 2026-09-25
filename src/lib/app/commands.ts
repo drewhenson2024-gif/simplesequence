@@ -28,11 +28,20 @@ import {
   type SenderStatus,
 } from "../domain/fsm";
 import { addJitter, type WorkingHours } from "../domain/jitter";
+import {
+  bindingWindow,
+  categoryForStep,
+  FREQUENCY_DAY_MS,
+  FREQUENCY_MONTH_MS,
+  FREQUENCY_WEEK_MS,
+  frequencyCategories,
+  type FrequencyAmounts,
+  type FrequencyCategoryId,
+} from "../domain/linkedinFrequency";
 import { canMessageBeforeAccept, planFromUnipileAccount } from "../domain/linkedinPlan";
 import { linkedInProfileHref } from "../domain/linkedinProfile";
 import {
   classifyLinkedInProviderError,
-  LINKEDIN_INVITE_DAILY_CAP,
   LINKEDIN_INVITE_ROLLING_MS,
   PROVIDER_RESTRICTION,
   PROVIDER_THROTTLE,
@@ -852,7 +861,15 @@ export async function getCampaign(ctx: AppContext, campaignId: string) {
         ? ("throttled" as const)
         : null;
   const accountBudget = campaign.linkedinSenderId
-    ? await accountBudgetFor(ctx, campaign.linkedinSenderId, campaign.status, senderSignal, jobRows)
+    ? await accountBudgetFor(
+        ctx,
+        campaign.linkedinSenderId,
+        campaign.status,
+        senderSignal,
+        jobRows,
+        steps,
+        sender?.linkedinPlan,
+      )
     : null;
   const [sequenceRow] = campaign.sequenceId
     ? await ctx.db.select().from(tables.sequences).where(eq(tables.sequences.id, campaign.sequenceId)).limit(1)
@@ -1960,7 +1977,7 @@ export async function getFrequency(ctx: AppContext) {
   const senderId = pickLinkedInSenderId(senders, ws.linkedinSenderId);
   const sender = senders.find((row) => row.id === senderId) ?? null;
   const now = ctx.clock.now();
-  const connectionsUsed = sender ? await linkedinInvitesSentToday(ctx, sender.id) : 0;
+  const usage = sender ? await categoryUsage(ctx, sender.id) : emptyUsage();
   const lastAt = sender ? await lastSenderActionAt(ctx, sender.id) : null;
   const signal =
     sender?.status === "restricted"
@@ -1976,10 +1993,15 @@ export async function getFrequency(ctx: AppContext) {
           profileUrl: sender.profileUrl,
           status: sender.status,
           signal,
+          linkedinPlan: sender.linkedinPlan,
         }
       : null,
-    connectionsUsed,
-    connectionCap: pace.connectionCap,
+    categories: frequencyCategories(sender?.linkedinPlan).map((row) => ({
+      ...row,
+      usedDay: usage[row.id].day,
+      usedWeek: usage[row.id].week,
+      usedMonth: usage[row.id].month,
+    })),
     minGapMinutes: pace.minGapMinutes,
     lastActionLabel: lastAt ? formatWhen(new Date(lastAt), pace.timezone) : null,
     gapOpen: !lastAt || now.getTime() - lastAt >= pace.minGapMs,
@@ -2031,38 +2053,73 @@ async function senderHasInFlight(ctx: AppContext, senderId: string): Promise<boo
   return Boolean(rows[0]);
 }
 
-async function linkedinInvitesSentToday(ctx: AppContext, senderId: string): Promise<number> {
-  const since = ctx.clock.now().getTime() - LINKEDIN_INVITE_ROLLING_MS;
+function emptyUsage(): Record<FrequencyCategoryId, FrequencyAmounts> {
+  return {
+    connection_with_note: { day: 0, week: 0, month: 0 },
+    connection_without_note: { day: 0, week: 0, month: 0 },
+    message_after_accept: { day: 0, week: 0, month: 0 },
+    message_before_accept: { day: 0, week: 0, month: 0 },
+  };
+}
+
+async function categoryUsage(ctx: AppContext, senderId: string): Promise<Record<FrequencyCategoryId, FrequencyAmounts>> {
+  const totals = emptyUsage();
+  const now = ctx.clock.now().getTime();
   const jobs = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.senderId, senderId));
-  const sent = jobs.filter((job) => {
-    if (job.status !== "sent" || !job.claimedAt) return false;
-    return new Date(job.claimedAt).getTime() >= since;
-  });
-  if (sent.length === 0) return 0;
+  const sent = jobs.filter((job) => job.status === "sent" && job.claimedAt);
+  if (sent.length === 0) return totals;
   const campaignIds = [...new Set(sent.map((job) => job.campaignId))];
   const steps = await ctx.db
     .select()
     .from(tables.sequenceSteps)
     .where(inArray(tables.sequenceSteps.campaignId, campaignIds));
-  return sent.filter((job) => {
-    const step = steps.find((s) => s.campaignId === job.campaignId && s.stepIndex === job.stepIndex);
-    return step?.action === "connection";
-  }).length;
+  for (const job of sent) {
+    const campaignSteps = steps.filter((step) => step.campaignId === job.campaignId);
+    const step = campaignSteps.find((row) => row.stepIndex === job.stepIndex);
+    if (!step) continue;
+    const id = categoryForStep({
+      action: step.action,
+      bodyTemplate: step.bodyTemplate,
+      followsConnection: campaignSteps.some((row) => row.stepIndex < step.stepIndex && row.action === "connection"),
+    });
+    const age = now - new Date(job.claimedAt!).getTime();
+    if (age <= FREQUENCY_MONTH_MS) totals[id].month += 1;
+    if (age <= FREQUENCY_WEEK_MS) totals[id].week += 1;
+    if (age <= FREQUENCY_DAY_MS) totals[id].day += 1;
+  }
+  return totals;
 }
 
-async function jobIsLinkedInInvite(ctx: AppContext, job: { campaignId: string; stepIndex: number }): Promise<boolean> {
+async function categoryHasRoom(
+  ctx: AppContext,
+  job: { senderId: string; campaignId: string; stepIndex: number },
+): Promise<boolean> {
   const steps = await ctx.db
     .select()
     .from(tables.sequenceSteps)
     .where(eq(tables.sequenceSteps.campaignId, job.campaignId));
-  return steps.find((s) => s.stepIndex === job.stepIndex)?.action === "connection";
+  const step = steps.find((row) => row.stepIndex === job.stepIndex);
+  if (!step) return true;
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, job.senderId))
+    .limit(1);
+  const id = categoryForStep({
+    action: step.action,
+    bodyTemplate: step.bodyTemplate,
+    followsConnection: steps.some((row) => row.stepIndex < step.stepIndex && row.action === "connection"),
+  });
+  const allowance = frequencyCategories(sender?.linkedinPlan).find((row) => row.id === id);
+  if (!allowance || (allowance.day === 0 && allowance.week === 0 && allowance.month === 0)) return true;
+  const used = (await categoryUsage(ctx, job.senderId))[id];
+  return used.day < allowance.day && used.week < allowance.week && used.month < allowance.month;
 }
 
 async function paceOf(ctx: AppContext) {
   const ws = await getWorkspace(ctx);
   const minGapMinutes = ws.minGapMinutes ?? 2;
   return {
-    connectionCap: ws.connectionCap ?? LINKEDIN_INVITE_DAILY_CAP,
     minGapMinutes,
     minGapMs: minGapMinutes * 60 * 1000,
     timezone: ws.timezone,
@@ -2102,21 +2159,36 @@ async function accountBudgetFor(
   senderId: string,
   status: string,
   senderSignal: "throttled" | "restricted" | null,
-  jobs: { status: string; dueAt: string; action: string | null; error?: string | null }[],
+  jobs: { status: string; dueAt: string; stepIndex: number; action: string | null; error?: string | null }[],
+  steps: Array<{ stepIndex: number; action: string; bodyTemplate: string }>,
+  plan: string | null | undefined,
 ) {
-  const connectionsUsed = await linkedinInvitesSentToday(ctx, senderId);
   const pace = await paceOf(ctx);
-  let note: string | null = null;
+  const usage = await categoryUsage(ctx, senderId);
   const next = jobs
     .filter((job) => job.status === "pending")
     .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
+  const step = next ? steps.find((row) => row.stepIndex === next.stepIndex) : steps[0];
+  const followsConnection = step
+    ? steps.some((row) => row.stepIndex < step.stepIndex && row.action === "connection")
+    : false;
+  const categoryId = categoryForStep({
+    action: step?.action ?? "connection",
+    bodyTemplate: step?.bodyTemplate ?? "",
+    followsConnection,
+  });
+  const allowance = frequencyCategories(plan).find((row) => row.id === categoryId) ?? frequencyCategories(plan)[0];
+  const bound = bindingWindow(allowance, usage[categoryId]);
+  let note: string | null = null;
   if (status === "running" && next && !senderSignal) {
     const due = new Date(next.dueAt);
     const now = ctx.clock.now();
     if (next.error === "waiting for accept") {
       note = "The next message waits until they accept the connection.";
-    } else if (next.action === "connection" && connectionsUsed >= pace.connectionCap) {
-      note = "The next step is waiting until a connection leaves that window.";
+    } else if (bound.allowance === 0) {
+      note = "This step will not send on this account.";
+    } else if (bound.used >= bound.allowance) {
+      note = `The next ${allowance.label.toLowerCase()} waits until one leaves ${bound.periodLabel}.`;
     } else if (due.getTime() > now.getTime()) {
       note = `The next step is due ${formatWhen(due, pace.timezone)}.`;
     } else if (!(await senderGapOpen(ctx, senderId, pace.minGapMs))) {
@@ -2126,8 +2198,10 @@ async function accountBudgetFor(
     }
   }
   return {
-    connectionsUsed,
-    connectionCap: pace.connectionCap,
+    categoryLabel: allowance.label,
+    used: bound.used,
+    allowance: bound.allowance,
+    periodLabel: bound.periodLabel,
     note,
   };
 }
@@ -2169,10 +2243,7 @@ export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boole
   for (const job of due) {
     if (claimedSenders.has(job.senderId) || (await senderHasInFlight(ctx, job.senderId))) continue;
     if (!(await senderGapOpen(ctx, job.senderId, pace.minGapMs))) continue;
-    if (await jobIsLinkedInInvite(ctx, job)) {
-      const sentToday = await linkedinInvitesSentToday(ctx, job.senderId);
-      if (sentToday >= pace.connectionCap) continue;
-    }
+    if (!(await categoryHasRoom(ctx, job))) continue;
     const [sender] = await ctx.db
       .select()
       .from(tables.senderAccounts)

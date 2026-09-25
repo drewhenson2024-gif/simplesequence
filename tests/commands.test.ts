@@ -432,11 +432,11 @@ describe("commands", () => {
     expect(invite?.input).toMatchObject({ imageUrl: "https://example.com/card.png" });
   });
 
-  it("caps LinkedIn invites per sender per day", async () => {
+  it("stops a noted connection at the suggested monthly amount", async () => {
     const { ctx, unipile, advance } = await testApp();
     const header = "first_name,last_name,company,title,email,linkedin_url";
     const rows = Array.from(
-      { length: 30 },
+      { length: 8 },
       (_, i) => `P${i},Lead${i},Co,Ops,p${i}@x.com,https://www.linkedin.com/in/p${i}`,
     );
     const list = await importLeads(ctx, { listName: "cap", content: [header, ...rows].join("\n") });
@@ -444,14 +444,14 @@ describe("commands", () => {
     await addLeadsToCampaign(ctx, campaign.id, { listId: list.listId });
     await startCampaign(ctx, campaign.id);
     advance(20 * 60 * 1000);
-    for (let i = 0; i < 25; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       await tick(ctx, { ignoreWorkingHours: true });
       advance(2 * 60 * 1000);
     }
-    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(25);
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(5);
     const extra = await tick(ctx, { ignoreWorkingHours: true });
     expect(extra.processed).toBe(0);
-    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(25);
+    expect(unipile.calls.filter((c) => c.kind === "invite")).toHaveLength(5);
   });
 
   it("fills name, title, company, and headline from a LinkedIn lookup", async () => {

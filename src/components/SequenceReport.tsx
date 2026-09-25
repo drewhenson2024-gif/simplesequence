@@ -96,8 +96,10 @@ export function SequenceReport({
   createdAt?: string;
   senderSignal?: "throttled" | "restricted" | null;
   accountBudget?: {
-    connectionsUsed: number;
-    connectionCap: number;
+    categoryLabel: string;
+    used: number;
+    allowance: number;
+    periodLabel: string;
     note: string | null;
   } | null;
   linkedinPlan?: string | null;
@@ -151,11 +153,11 @@ export function SequenceReport({
           {accountBudget ? (
             <div className="stat-grid mt-3 sm:grid-cols-[12rem_minmax(0,1fr)]">
               <div>
-                <p className="text-xs text-(--muted)">Connections</p>
+                <p className="text-xs text-(--muted)">{accountBudget.categoryLabel}</p>
                 <p className="mt-1 text-xl font-semibold tracking-tight">
-                  {accountBudget.connectionsUsed} of {accountBudget.connectionCap}
+                  {accountBudget.used} of {accountBudget.allowance}
                 </p>
-                <p className="mt-1 text-xs text-(--muted)">Last 24 hours</p>
+                <p className="mt-1 text-xs text-(--muted)">{accountBudget.periodLabel}</p>
               </div>
               <div>
                 <p className="text-xs text-(--muted)">Next step</p>

@@ -20,8 +20,6 @@ async function main() {
         JSON.stringify({
           processed: result.processed,
           gapMinutes: pace.minGapMinutes,
-          connectionsUsed: pace.connectionsUsed,
-          connectionCap: pace.connectionCap,
           at: new Date().toISOString(),
         }),
       );

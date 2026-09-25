@@ -84,7 +84,7 @@ describe("rolling account pace", () => {
     expect(jobs.find((job) => job.status === "sent")?.campaignId).toBe(high.id);
   });
 
-  it("frees a connection slot once the oldest invite leaves the last 24 hours", async () => {
+  it("frees a noted connection once one leaves the month", async () => {
     const { ctx, advance } = await testApp();
     const list = await importList(ctx, "roll", csv("Ada", "ada"));
     const campaign = await createCampaign(ctx, { name: "roll", steps: stepsForTemplate() });
@@ -92,7 +92,7 @@ describe("rolling account pace", () => {
     await startCampaign(ctx, campaign.id);
     const [pending] = await ctx.db.select().from(sendJobs);
     const now = ctx.clock.now();
-    for (let i = 0; i < 25; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       await ctx.db.insert(sendJobs).values({
         id: `job_cap_${i}`,
         enrollmentId: `enr_cap_${i}`,
@@ -111,12 +111,14 @@ describe("rolling account pace", () => {
     advance(20 * 60 * 1000);
     const { getCampaign } = await import("@/lib/app/commands");
     const full = await getCampaign(ctx, campaign.id);
-    expect(full.accountBudget?.connectionsUsed).toBe(25);
-    expect(full.accountBudget?.note).toContain("leaves that window");
+    expect(full.accountBudget?.used).toBe(5);
+    expect(full.accountBudget?.allowance).toBe(5);
+    expect(full.accountBudget?.periodLabel).toBe("this month");
+    expect(full.accountBudget?.note).toContain("this month");
     expect((await tick(ctx)).processed).toBe(0);
     await ctx.db
       .update(sendJobs)
-      .set({ claimedAt: new Date(ctx.clock.now().getTime() - 25 * 60 * 60 * 1000).toISOString() })
+      .set({ claimedAt: new Date(ctx.clock.now().getTime() - 31 * 24 * 60 * 60 * 1000).toISOString() })
       .where(eq(sendJobs.id, "job_cap_0"));
     expect((await tick(ctx)).processed).toBe(1);
   });
@@ -135,8 +137,8 @@ describe("rolling account pace", () => {
     advance(20 * 60 * 1000);
     await tick(ctx);
     const duringGap = await getCampaign(ctx, campaign.id);
-    expect(duringGap.accountBudget?.connectionsUsed).toBe(1);
-    expect(duringGap.accountBudget?.connectionCap).toBe(25);
+    expect(duringGap.accountBudget?.used).toBe(1);
+    expect(duringGap.accountBudget?.allowance).toBe(5);
     expect(duringGap.accountBudget?.note).toContain("2-minute gap");
     advance(2 * 60 * 1000);
     const waitingOnCheck = await getCampaign(ctx, campaign.id);
@@ -156,13 +158,13 @@ describe("rolling account pace", () => {
     await tick(ctx);
     advance(2 * 60 * 1000);
     const view = await getCampaign(ctx, campaign.id);
-    expect(view.accountBudget?.connectionsUsed).toBe(1);
+    expect(view.accountBudget?.categoryLabel).toBe("Message after they accept");
     expect(view.accountBudget?.note).toContain("due");
   });
 
-  it("applies a lower connection cap from Frequency", async () => {
+  it("reports the suggested amount for a connection with a note", async () => {
     const { ctx, advance } = await testApp();
-    const { getFrequency, updateFrequency, getCampaign } = await import("@/lib/app/commands");
+    const { getFrequency } = await import("@/lib/app/commands");
     const list = await importList(
       ctx,
       "freq",
@@ -175,14 +177,12 @@ describe("rolling account pace", () => {
     await tick(ctx);
     advance(2 * 60 * 1000);
     const before = await getFrequency(ctx);
-    expect(before.connectionsUsed).toBe(1);
-    expect(before.connectionCap).toBe(25);
+    const noted = before.categories.find((row) => row.id === "connection_with_note");
+    const plain = before.categories.find((row) => row.id === "connection_without_note");
+    expect(noted).toMatchObject({ day: 5, week: 5, month: 5, usedMonth: 1 });
+    expect(plain).toMatchObject({ day: 21, week: 150, month: 600, usedMonth: 0 });
     expect(before.gapOpen).toBe(true);
-    await updateFrequency(ctx, { connectionCap: 1 });
-    expect((await tick(ctx)).processed).toBe(0);
-    const view = await getCampaign(ctx, campaign.id);
-    expect(view.accountBudget?.connectionCap).toBe(1);
-    expect(view.accountBudget?.note).toContain("leaves that window");
+    expect((await tick(ctx)).processed).toBe(1);
   });
 
   it("updates queued copy and delay while a sequence is running", async () => {
