@@ -19,6 +19,8 @@ People paste or MCP `urls` of LinkedIn profile URLs → import looks up name, ti
 
 An always-on sender waits out the gap and sends one due action while the invite cap has room. Frequency has Check now for the same send. The site stays on Vercel. The sender does not use Vercel cron.
 
+Settings shows the connected account as normal, Premium, Sales Navigator, or Recruiter. A message after a connection waits until they accept. A message with no connection is InMail and needs Premium, Sales Navigator, or Recruiter. A normal account does not send that step.
+
 We do not search for people. We do not run an in-market Signals watcher. We do not send email.
 
 ## Coming soon until a gate is green

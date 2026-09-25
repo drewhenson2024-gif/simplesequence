@@ -28,6 +28,7 @@ import {
   type SenderStatus,
 } from "../domain/fsm";
 import { addJitter, type WorkingHours } from "../domain/jitter";
+import { canMessageBeforeAccept, planFromUnipileAccount } from "../domain/linkedinPlan";
 import { linkedInProfileHref } from "../domain/linkedinProfile";
 import {
   classifyLinkedInProviderError,
@@ -713,6 +714,7 @@ export async function getCampaign(ctx: AppContext, campaignId: string) {
     ...campaign,
     senderSignal,
     accountBudget,
+    linkedinPlan: sender?.linkedinPlan ?? null,
     steps,
     enrollments: enrollments.map((e) => ({ ...e, lead: byId.get(e.leadId) ?? null })),
     enrollmentCounts: counts,
@@ -1321,6 +1323,7 @@ export async function syncUnipileAccounts(ctx: AppContext) {
       account.connection_params?.mail ||
       (typeof im === "string" ? im : undefined) ||
       `${channel} ${account.id}`;
+    const linkedinPlan = planFromUnipileAccount(account);
     const existing = await ctx.db
       .select()
       .from(tables.senderAccounts)
@@ -1334,7 +1337,7 @@ export async function syncUnipileAccounts(ctx: AppContext) {
     if (existing[0]) {
       await ctx.db
         .update(tables.senderAccounts)
-        .set({ status: "healthy", displayName: display, lastError: null })
+        .set({ status: "healthy", displayName: display, lastError: null, linkedinPlan })
         .where(eq(tables.senderAccounts.id, existing[0].id));
       mapped.push(existing[0].id);
       continue;
@@ -1357,6 +1360,7 @@ export async function syncUnipileAccounts(ctx: AppContext) {
           status: "healthy",
           unipileAccountId: account.id,
           displayName: display,
+          linkedinPlan,
         })
         .where(eq(tables.senderAccounts.id, pending[0].id));
       mapped.push(pending[0].id);
@@ -1377,6 +1381,7 @@ export async function syncUnipileAccounts(ctx: AppContext) {
           unipileAccountId: account.id,
           displayName: display,
           lastError: null,
+          linkedinPlan,
         })
         .where(eq(tables.senderAccounts.id, byChannel[0].id));
       mapped.push(byChannel[0].id);
@@ -1390,6 +1395,7 @@ export async function syncUnipileAccounts(ctx: AppContext) {
       status: "healthy",
       unipileAccountId: account.id,
       displayName: display,
+      linkedinPlan,
       timezone: "America/Los_Angeles",
       lastError: null,
       createdAt: now,
@@ -1418,14 +1424,17 @@ export async function refreshLinkedInProfiles(ctx: AppContext, opts?: { force?: 
     if (sender.channel !== "linkedin") continue;
     const accountId = sender.unipileAccountId;
     if (!accountId || accountId.startsWith("mock_")) continue;
-    if (!opts?.force && sender.profileUrl) continue;
+    if (!opts?.force && sender.profileUrl && sender.linkedinPlan) continue;
     try {
       const profile = await ctx.unipile.ownProfile(accountId);
       const href = linkedInProfileHref(profile.profileUrl);
-      if (!href) continue;
+      if (!href && !profile.plan) continue;
       await ctx.db
         .update(tables.senderAccounts)
-        .set({ profileUrl: href })
+        .set({
+          ...(href ? { profileUrl: href } : {}),
+          ...(profile.plan ? { linkedinPlan: profile.plan } : {}),
+        })
         .where(eq(tables.senderAccounts.id, sender.id));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1941,7 +1950,7 @@ async function accountBudgetFor(
   senderId: string,
   status: string,
   senderSignal: "throttled" | "restricted" | null,
-  jobs: { status: string; dueAt: string; action: string | null }[],
+  jobs: { status: string; dueAt: string; action: string | null; error?: string | null }[],
 ) {
   const connectionsUsed = await linkedinInvitesSentToday(ctx, senderId);
   const pace = await paceOf(ctx);
@@ -1952,7 +1961,9 @@ async function accountBudgetFor(
   if (status === "running" && next && !senderSignal) {
     const due = new Date(next.dueAt);
     const now = ctx.clock.now();
-    if (next.action === "connection" && connectionsUsed >= pace.connectionCap) {
+    if (next.error === "waiting for accept") {
+      note = "The next message waits until they accept the connection.";
+    } else if (next.action === "connection" && connectionsUsed >= pace.connectionCap) {
       note = "The next step is waiting until a connection leaves that window.";
     } else if (due.getTime() > now.getTime()) {
       note = `The next step is due ${formatWhen(due, pace.timezone)}.`;
@@ -2036,8 +2047,8 @@ export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boole
       .where(eq(tables.sendJobs.id, job.id))
       .limit(1);
     if (owned?.claimedBy !== claimId) continue;
-    await executeJob(ctx, job.id);
-    processed += 1;
+    const outcome = await executeJob(ctx, job.id);
+    if (outcome !== "held") processed += 1;
   }
   return { processed };
 }
@@ -2072,7 +2083,7 @@ async function parkJob(
   }
 }
 
-async function executeJob(ctx: AppContext, jobId: string) {
+async function executeJob(ctx: AppContext, jobId: string): Promise<"held" | void> {
   const [job] = await ctx.db.select().from(tables.sendJobs).where(eq(tables.sendJobs.id, jobId)).limit(1);
   if (!job) return;
   await ctx.db
@@ -2188,11 +2199,28 @@ async function executeJob(ctx: AppContext, jobId: string) {
         await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "no linkedin url");
         return;
       }
+      const priorConnect = steps.find((s) => s.action === "connection" && s.stepIndex < step.stepIndex);
+      if (priorConnect) {
+        let accepted = false;
+        try {
+          accepted = await ctx.unipile.isFirstDegree(accountId, fields.linkedinUrl);
+        } catch {
+          accepted = false;
+        }
+        if (!accepted) {
+          await parkJob(ctx, jobId, enrollment.id, ctx.clock.now(), "waiting for accept");
+          return "held";
+        }
+      } else if (!canMessageBeforeAccept(sender?.linkedinPlan)) {
+        await finishJob(ctx, jobId, enrollment.id, steps, job, "skipped", "needs premium");
+        return "held";
+      }
       result = await ctx.unipile.message({
         accountId,
         profileUrl: fields.linkedinUrl,
         body,
         imageUrl: step.imageUrl,
+        inmail: !priorConnect,
       });
     }
   } catch (err) {

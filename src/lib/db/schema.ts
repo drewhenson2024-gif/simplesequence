@@ -33,6 +33,7 @@ export const senderAccounts = sqliteTable("sender_accounts", {
   unipileAccountId: text("unipile_account_id"),
   displayName: text("display_name").notNull(),
   profileUrl: text("profile_url"),
+  linkedinPlan: text("linkedin_plan"),
   timezone: text("timezone"),
   lastError: text("last_error"),
   createdAt: text("created_at").notNull(),

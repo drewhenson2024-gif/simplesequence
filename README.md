@@ -37,3 +37,5 @@ Required env: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `APP_URL` (`https://simp
 Optional: `HUBSPOT_ACCESS_TOKEN` (CRM destination label; export still writes a payload first).
 
 The sender (`pnpm sender`) stays awake, waits out the gap, and sends one due action while the connection cap has room. Frequency has **Check now** for the same send. The site stays on Vercel. Hobby cron remains a once-a-day backup (`0 16 * * *`).
+
+Settings shows whether the LinkedIn account is normal, Premium, Sales Navigator, or Recruiter. A follow-up waits until they accept. A message before they accept needs Premium, Sales Navigator, or Recruiter, and a normal account will not send it.

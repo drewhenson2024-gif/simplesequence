@@ -1,6 +1,7 @@
 "use client";
 
 import { Switch } from "@/components/Toggle";
+import { stepRequirement } from "@/lib/domain/linkedinPlan";
 import { renderTemplate, VARIABLE_GROUPS, type LeadFields } from "@/lib/domain/templates";
 
 export type EditorStep = {
@@ -93,6 +94,7 @@ export function SequenceEditor({
   previewIndex,
   onPreviewIndex,
   editable,
+  linkedinPlan,
   onChange,
   onAdd,
 }: {
@@ -101,6 +103,7 @@ export function SequenceEditor({
   previewIndex: number;
   onPreviewIndex: (index: number) => void;
   editable: boolean;
+  linkedinPlan?: string | null;
   onChange: (steps: EditorStep[]) => void;
   onAdd: (index: number, kind: Kind) => void;
 }) {
@@ -198,6 +201,24 @@ export function SequenceEditor({
                   ) : null}
                 </div>
               </div>
+              {(() => {
+                const followsConnection = steps
+                  .slice(0, index)
+                  .some((row) => row.action === "connection");
+                const requirement = stepRequirement({
+                  action: step.action,
+                  followsConnection,
+                  plan: linkedinPlan,
+                });
+                return (
+                  <div className="mt-3">
+                    <p className="text-sm text-(--muted)">{requirement.need}</p>
+                    {requirement.blocked ? (
+                      <p className="mt-1 text-sm text-(--danger)">{requirement.blocked}</p>
+                    ) : null}
+                  </div>
+                );
+              })()}
               <div className="mt-4 grid gap-4 lg:grid-cols-2">
                 <div>
                   <p className="text-sm text-(--muted)">

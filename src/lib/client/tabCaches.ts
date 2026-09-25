@@ -137,6 +137,7 @@ export type SettingsSnapshot = {
     displayName: string;
     unipileAccountId?: string | null;
     profileUrl?: string | null;
+    linkedinPlan?: string | null;
     lastError?: string | null;
   }>;
   workspace?: {

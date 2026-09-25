@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { SoonBadge, StatusBadge } from "@/components/Toggle";
+import { stepRequirement } from "@/lib/domain/linkedinPlan";
 import { formatWhen, statusLabel } from "@/lib/ui/display";
 import { useAnalytics } from "@/lib/client/tabCaches";
 import type { PreviewLead } from "@/components/SequenceEditor";
@@ -68,6 +69,8 @@ function skipLabel(reason: string | null) {
   if (reason === "gift removed") return "Gift stage removed";
   if (reason === "email removed") return "Email stage removed";
   if (reason === "invite limit") return "Invite limit — this one waits";
+  if (reason === "waiting for accept") return "Waiting until they accept";
+  if (reason === "needs premium") return "Needs LinkedIn Premium, Sales Navigator, or Recruiter";
   return reason;
 }
 
@@ -77,6 +80,7 @@ export function SequenceReport({
   createdAt,
   senderSignal,
   accountBudget,
+  linkedinPlan,
   steps,
   enrollments,
   enrollmentCounts,
@@ -96,6 +100,7 @@ export function SequenceReport({
     connectionCap: number;
     note: string | null;
   } | null;
+  linkedinPlan?: string | null;
   steps: Step[];
   enrollments: Enrollment[];
   enrollmentCounts: Record<string, number>;
@@ -186,7 +191,27 @@ export function SequenceReport({
                     return (
                       <tr key={step.stepIndex} className="border-t border-(--line)">
                         <td className="px-4 py-2">{index + 1}</td>
-                        <td className="px-4 py-2">{stepTitle(step.action)}</td>
+                        <td className="px-4 py-2">
+                          <div>{stepTitle(step.action)}</div>
+                          {(() => {
+                            const followsConnection = steps
+                              .slice(0, index)
+                              .some((row) => row.action === "connection");
+                            const requirement = stepRequirement({
+                              action: step.action,
+                              followsConnection,
+                              plan: linkedinPlan,
+                            });
+                            return (
+                              <>
+                                <div className="text-xs text-(--muted)">{requirement.need}</div>
+                                {requirement.blocked ? (
+                                  <div className="text-xs text-(--danger)">{requirement.blocked}</div>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                        </td>
                         <td className="px-4 py-2">{dayLabel(steps, index)}</td>
                         <td className="px-4 py-2">{sent}</td>
                         <td className="px-4 py-2">{skipped}</td>

@@ -36,6 +36,7 @@ type Campaign = {
   enrollmentCounts: Record<string, number>;
   jobCounts: Record<string, number>;
   senderSignal?: "throttled" | "restricted" | null;
+  linkedinPlan?: string | null;
   accountBudget?: {
     connectionsUsed: number;
     connectionCap: number;
@@ -375,6 +376,7 @@ export default function CampaignDetailPage() {
             previewIndex={previewIndex}
             onPreviewIndex={setPreviewIndex}
             editable={editable}
+            linkedinPlan={data.linkedinPlan}
             onChange={(next) => {
               setSteps(next);
               setDirty(true);
@@ -422,6 +424,7 @@ export default function CampaignDetailPage() {
             createdAt={data.createdAt}
             senderSignal={data.senderSignal}
             accountBudget={data.accountBudget}
+            linkedinPlan={data.linkedinPlan}
             steps={steps}
             enrollments={data.enrollments}
             enrollmentCounts={data.enrollmentCounts}

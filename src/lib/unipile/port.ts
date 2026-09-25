@@ -1,3 +1,4 @@
+import { planFromUnipileAccount } from "../domain/linkedinPlan";
 import { profileUrlFromLinkedInAccount } from "../domain/linkedinProfile";
 
 export type UnipileInviteInput = {
@@ -12,6 +13,7 @@ export type UnipileMessageInput = {
   profileUrl: string;
   body: string;
   imageUrl?: string | null;
+  inmail?: boolean;
 };
 
 export type UnipileSendResult = {
@@ -27,7 +29,7 @@ export type UnipileAccount = {
   name?: string;
   connection_params?: {
     mail?: string;
-    im?: string | { publicIdentifier?: string; username?: string };
+    im?: string | { publicIdentifier?: string; username?: string; premiumFeatures?: string[] };
   };
 };
 
@@ -46,8 +48,9 @@ export type UnipilePort = {
   hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string>;
   invite(input: UnipileInviteInput): Promise<UnipileSendResult>;
   message(input: UnipileMessageInput): Promise<UnipileSendResult>;
+  isFirstDegree(accountId: string, profileUrl: string): Promise<boolean>;
   listAccounts?(): Promise<UnipileAccount[]>;
-  ownProfile?(accountId: string): Promise<{ name?: string; profileUrl?: string }>;
+  ownProfile?(accountId: string): Promise<{ name?: string; profileUrl?: string; plan?: string }>;
   lookupProfile?(input: { profileUrl: string; accountId?: string }): Promise<{
     firstName?: string;
     lastName?: string;
@@ -63,6 +66,7 @@ export type UnipilePort = {
 
 export class MockUnipile implements UnipilePort {
   readonly calls: Array<{ kind: string; input: unknown }> = [];
+  firstDegree = true;
 
   async hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string> {
     this.calls.push({ kind: "hostedAuth", input: { channel, ...opts } });
@@ -81,13 +85,18 @@ export class MockUnipile implements UnipilePort {
     return { providerId: `mock_msg_${this.calls.length}`, dryRun: true };
   }
 
+  async isFirstDegree(accountId: string, profileUrl: string): Promise<boolean> {
+    this.calls.push({ kind: "isFirstDegree", input: { accountId, profileUrl } });
+    return this.firstDegree;
+  }
+
   async listAccounts(): Promise<UnipileAccount[]> {
     return [];
   }
 
-  async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string }> {
+  async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string; plan?: string }> {
     this.calls.push({ kind: "ownProfile", input: { accountId } });
-    return { name: "Sandbox LinkedIn", profileUrl: `https://www.linkedin.com/in/${accountId}` };
+    return { name: "Sandbox LinkedIn", profileUrl: `https://www.linkedin.com/in/${accountId}`, plan: "normal" };
   }
 
   async lookupProfile(input: { profileUrl: string }): Promise<{
@@ -217,7 +226,7 @@ export class LiveUnipile implements UnipilePort {
     return body.items ?? [];
   }
 
-  async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string }> {
+  async ownProfile(accountId: string): Promise<{ name?: string; profileUrl?: string; plan?: string }> {
     const accounts = await this.listAccounts();
     const account = accounts.find((row) => row.id === accountId);
     if (!account) throw new Error("LinkedIn account was not in the Unipile account list");
@@ -228,7 +237,14 @@ export class LiveUnipile implements UnipilePort {
         im && typeof im === "object" ? Object.keys(im).join(",") : im ? "string" : "missing";
       throw new Error(`no public LinkedIn identifier (${detail})`);
     }
-    return { name: account.name, profileUrl };
+    return { name: account.name, profileUrl, plan: planFromUnipileAccount(account) };
+  }
+
+  async isFirstDegree(accountId: string, profileUrl: string): Promise<boolean> {
+    const slug = this.slugFromProfileUrl(profileUrl);
+    const profile = await this.fetchUserProfile(slug, accountId);
+    const distance = (profile.network_distance ?? "").toUpperCase().replace(/-/g, "_");
+    return distance === "FIRST_DEGREE" || distance === "DISTANCE_1";
   }
 
   async lookupProfile(input: { profileUrl: string; accountId?: string }): Promise<{
@@ -274,6 +290,7 @@ export class LiveUnipile implements UnipilePort {
     location?: string;
     summary?: string;
     public_profile_url?: string;
+    network_distance?: string;
     work_experience?: Array<{
       position?: string;
       company?: string | { text?: string };
@@ -346,6 +363,7 @@ export class LiveUnipile implements UnipilePort {
     form.set("account_id", input.accountId);
     form.set("text", input.body);
     form.set("attendees_ids", providerId);
+    if (input.inmail) form.set("linkedin[inmail]", "true");
     if (input.imageUrl) {
       const img = await fetch(input.imageUrl);
       if (img.ok) form.set("attachments", await img.blob(), "image.jpg");

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell, PageHeader } from "@/components/AppShell";
 import { StatusBadge, Toggle } from "@/components/Toggle";
+import { planExplain, planLabel } from "@/lib/domain/linkedinPlan";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
 import { cursorMcpInstallHref, mcpClientConfigJson } from "@/lib/domain/mcpInstall";
 import { useSettings, type SettingsSnapshot } from "@/lib/client/tabCaches";
@@ -17,6 +18,7 @@ type Sender = {
   displayName: string;
   unipileAccountId?: string | null;
   profileUrl?: string | null;
+  linkedinPlan?: string | null;
   lastError?: string | null;
 };
 
@@ -211,6 +213,7 @@ export default function SettingsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium">{sender.displayName}</p>
                     <StatusBadge tone={state.tone}>{state.label}</StatusBadge>
+                    {canReconnect ? <StatusBadge tone="muted">{planLabel(sender.linkedinPlan)}</StatusBadge> : null}
                     {selected ? <span className="text-xs font-medium text-(--ochre)">Selected</span> : null}
                   </div>
                   {profileHref ? (
@@ -224,6 +227,9 @@ export default function SettingsPage() {
                     </a>
                   ) : hint ? (
                     <p className="mt-1 text-sm text-(--muted)">Account · {hint}</p>
+                  ) : null}
+                  {canReconnect ? (
+                    <p className="mt-1 max-w-xl text-sm text-(--muted)">{planExplain(sender.linkedinPlan)}</p>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS sender_accounts (
   unipile_account_id TEXT,
   display_name TEXT NOT NULL,
   profile_url TEXT,
+  linkedin_plan TEXT,
   timezone TEXT,
   last_error TEXT,
   created_at TEXT NOT NULL
@@ -228,7 +229,7 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 async function readSchemaVersion(client: Client): Promise<number> {
   try {
@@ -257,6 +258,7 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE workspaces ADD COLUMN developer_trial INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE workspaces ADD COLUMN linkedin_sender_id TEXT",
     "ALTER TABLE sender_accounts ADD COLUMN profile_url TEXT",
+    "ALTER TABLE sender_accounts ADD COLUMN linkedin_plan TEXT",
     "ALTER TABLE campaigns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE workspaces ADD COLUMN connection_cap INTEGER NOT NULL DEFAULT 25",
     "ALTER TABLE workspaces ADD COLUMN min_gap_minutes INTEGER NOT NULL DEFAULT 2",
