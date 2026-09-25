@@ -2024,11 +2024,18 @@ export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boole
     if (!campaign || campaign.status !== "running") continue;
 
     const claimed = transitionJob("pending", "claimed");
+    const claimId = newId("clm");
     await ctx.db
       .update(tables.sendJobs)
-      .set({ status: claimed, claimedAt: iso(now), claimedBy: "worker" })
+      .set({ status: claimed, claimedAt: iso(now), claimedBy: claimId })
       .where(and(eq(tables.sendJobs.id, job.id), eq(tables.sendJobs.status, "pending")));
     claimedSenders.add(job.senderId);
+    const [owned] = await ctx.db
+      .select({ claimedBy: tables.sendJobs.claimedBy })
+      .from(tables.sendJobs)
+      .where(eq(tables.sendJobs.id, job.id))
+      .limit(1);
+    if (owned?.claimedBy !== claimId) continue;
     await executeJob(ctx, job.id);
     processed += 1;
   }

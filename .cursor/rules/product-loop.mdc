@@ -17,7 +17,7 @@ The homepage is for customers. Feature cards show an in-page example — they mu
 
 People paste or MCP `urls` of LinkedIn profile URLs → import looks up name, title, company, headline, location, and about → sequence draft (connection + LinkedIn messages) → explicit Start → send (sandbox, working hours, one in-flight, LinkedIn invite daily cap, stop on reply) → Outbox → Inbox → Stop lead.
 
-A check sends one due action when the gap is clear and the invite cap has room. Frequency has Check now. Hobby cron still wakes once a day; a 5-minute schedule needs Pro or a ping of the tick URL.
+An always-on sender waits out the gap and sends one due action while the invite cap has room. Frequency has Check now for the same send. The site stays on Vercel. The sender does not use Vercel cron.
 
 We do not search for people. We do not run an in-market Signals watcher. We do not send email.
 

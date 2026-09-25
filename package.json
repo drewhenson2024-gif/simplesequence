@@ -11,7 +11,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:migrate": "tsx src/lib/db/migrate.ts"
+    "db:migrate": "tsx src/lib/db/migrate.ts",
+    "sender": "tsx src/worker/sender.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

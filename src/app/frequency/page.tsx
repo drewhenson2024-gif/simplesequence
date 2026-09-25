@@ -89,7 +89,7 @@ export default function FrequencyPage() {
     <AppShell>
       <PageHeader
         title="Frequency"
-        lede="How often this LinkedIn account may act. Saving changes the cap and the wait between actions. Check now sends the next due action if the gap is clear and the connection cap has room."
+        lede="How often this LinkedIn account may act. A sender waits out the gap and sends the next due action while the connection cap has room. Check now does that same send once."
       />
 
       {!data ? (
