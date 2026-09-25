@@ -129,6 +129,7 @@ export type SettingsSnapshot = {
   killSwitch: number | boolean;
   developerTrial?: number | boolean;
   liveKeys?: boolean;
+  loginKey?: boolean;
   linkedinSenderId?: string | null;
   senders: Array<{
     id: string;
@@ -139,6 +140,8 @@ export type SettingsSnapshot = {
     profileUrl?: string | null;
     linkedinPlan?: string | null;
     lastError?: string | null;
+    autoLogin?: boolean;
+    lastLoginAt?: string | null;
   }>;
   workspace?: {
     timezone: string;

@@ -47,6 +47,8 @@ CREATE TABLE IF NOT EXISTS sender_accounts (
   linkedin_plan TEXT,
   timezone TEXT,
   last_error TEXT,
+  login_secret TEXT,
+  last_login_at TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS lists (
@@ -247,7 +249,7 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 async function readSchemaVersion(client: Client): Promise<number> {
   try {
@@ -277,6 +279,8 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE workspaces ADD COLUMN linkedin_sender_id TEXT",
     "ALTER TABLE sender_accounts ADD COLUMN profile_url TEXT",
     "ALTER TABLE sender_accounts ADD COLUMN linkedin_plan TEXT",
+    "ALTER TABLE sender_accounts ADD COLUMN login_secret TEXT",
+    "ALTER TABLE sender_accounts ADD COLUMN last_login_at TEXT",
     "ALTER TABLE campaigns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE campaigns ADD COLUMN sequence_id TEXT",
     "ALTER TABLE campaigns ADD COLUMN list_id TEXT",

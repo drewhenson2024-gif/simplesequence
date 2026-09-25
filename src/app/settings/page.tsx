@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell, PageHeader } from "@/components/AppShell";
+import { AutoLogin } from "@/components/AutoLogin";
 import { StatusBadge, Toggle } from "@/components/Toggle";
 import { planExplain, planLabel } from "@/lib/domain/linkedinPlan";
 import { linkedInProfileHref } from "@/lib/domain/linkedinProfile";
@@ -36,6 +37,7 @@ function accountState(sender: Sender, liveKeys: boolean) {
     return { tone: "wait" as const, label: "Stopped — LinkedIn asked us to wait" };
   }
   if (sender.status === "pending") return { tone: "wait" as const, label: "Connecting" };
+  if (sender.status === "disconnected") return { tone: "danger" as const, label: "Logged out" };
   if (sender.status === "healthy" && !mock) return { tone: "ok" as const, label: "Connected" };
   if (sender.status === "healthy" && mock) {
     return liveKeys
@@ -293,6 +295,15 @@ export default function SettingsPage() {
           )}
         </div>
       </section>
+
+      {(() => {
+        const sender = linkedin.find(
+          (row) => row.id === selectedId && row.unipileAccountId && !row.unipileAccountId.startsWith("mock_"),
+        );
+        return sender ? (
+          <AutoLogin sender={sender} available={Boolean(data.loginKey)} onChanged={refresh} />
+        ) : null;
+      })()}
 
       <section className="card mt-6 p-5">
         <h2 className="text-lg">Safety</h2>

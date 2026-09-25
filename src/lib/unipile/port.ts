@@ -44,8 +44,14 @@ export type HostedAuthOpts = {
   reconnectAccount?: string;
 };
 
+export type UnipileLoginResult =
+  | { status: "connected"; accountId: string }
+  | { status: "checkpoint"; accountId: string; checkpoint: string };
+
 export type UnipilePort = {
   hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string>;
+  reconnectWithLogin?(input: { accountId: string; username: string; password: string }): Promise<UnipileLoginResult>;
+  solveCheckpoint?(input: { accountId: string; code: string }): Promise<UnipileLoginResult>;
   invite(input: UnipileInviteInput): Promise<UnipileSendResult>;
   message(input: UnipileMessageInput): Promise<UnipileSendResult>;
   isFirstDegree(accountId: string, profileUrl: string): Promise<boolean>;
@@ -67,6 +73,24 @@ export type UnipilePort = {
 export class MockUnipile implements UnipilePort {
   readonly calls: Array<{ kind: string; input: unknown }> = [];
   firstDegree = true;
+  loginCheckpoints: string[] = ["2FA"];
+
+  async reconnectWithLogin(input: { accountId: string; username: string; password: string }): Promise<UnipileLoginResult> {
+    this.calls.push({ kind: "reconnectWithLogin", input: { accountId: input.accountId, username: input.username } });
+    const next = this.loginCheckpoints[0];
+    return next
+      ? { status: "checkpoint", accountId: input.accountId, checkpoint: next }
+      : { status: "connected", accountId: input.accountId };
+  }
+
+  async solveCheckpoint(input: { accountId: string; code: string }): Promise<UnipileLoginResult> {
+    this.calls.push({ kind: "solveCheckpoint", input });
+    this.loginCheckpoints.shift();
+    const next = this.loginCheckpoints[0];
+    return next
+      ? { status: "checkpoint", accountId: input.accountId, checkpoint: next }
+      : { status: "connected", accountId: input.accountId };
+  }
 
   async hostedAuthUrl(channel: "linkedin", opts?: HostedAuthOpts): Promise<string> {
     this.calls.push({ kind: "hostedAuth", input: { channel, ...opts } });
@@ -218,6 +242,31 @@ export class LiveUnipile implements UnipilePort {
     })) as { url?: string };
     if (!body.url) throw new Error("Unipile hosted auth did not return a url");
     return body.url;
+  }
+
+  private loginResult(body: unknown, accountId: string): UnipileLoginResult {
+    const row = (body ?? {}) as { object?: string; account_id?: string; checkpoint?: { type?: string } };
+    const id = row.account_id ?? accountId;
+    if (row.object === "Checkpoint" || row.checkpoint?.type) {
+      return { status: "checkpoint", accountId: id, checkpoint: row.checkpoint?.type ?? "UNKNOWN" };
+    }
+    return { status: "connected", accountId: id };
+  }
+
+  async reconnectWithLogin(input: { accountId: string; username: string; password: string }): Promise<UnipileLoginResult> {
+    const body = await this.request(`/api/v1/accounts/${encodeURIComponent(input.accountId)}`, {
+      method: "POST",
+      body: JSON.stringify({ provider: "LINKEDIN", username: input.username, password: input.password }),
+    });
+    return this.loginResult(body, input.accountId);
+  }
+
+  async solveCheckpoint(input: { accountId: string; code: string }): Promise<UnipileLoginResult> {
+    const body = await this.request("/api/v1/accounts/checkpoint", {
+      method: "POST",
+      body: JSON.stringify({ provider: "LINKEDIN", account_id: input.accountId, code: input.code }),
+    });
+    return this.loginResult(body, input.accountId);
   }
 
   async listAccounts(): Promise<UnipileAccount[]> {

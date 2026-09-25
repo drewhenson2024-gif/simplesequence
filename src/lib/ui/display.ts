@@ -56,6 +56,10 @@ const ACTIVITY_LABELS: Record<string, string> = {
   sender_throttled: "LinkedIn slowed the account",
   sender_restricted: "LinkedIn restricted the account",
   sender_throttle_cleared: "LinkedIn wait cleared",
+  sender_disconnected: "LinkedIn logged the account out",
+  auto_login: "Logged back in to LinkedIn",
+  save_linkedin_login: "Saved the LinkedIn login",
+  remove_linkedin_login: "Removed the LinkedIn login",
 };
 
 export function activityLabel(action: string): string {

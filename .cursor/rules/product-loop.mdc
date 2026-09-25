@@ -21,6 +21,8 @@ An always-on sender waits out the gap and sends one due action while that action
 
 Settings shows the connected account as normal, Premium, Sales Navigator, or Recruiter. A message after a connection waits until they accept. A message with no connection is InMail and needs Premium, Sales Navigator, or Recruiter. A normal account does not send that step. A connection note on a free account is about 5 a month. A connection with no note is outside that monthly limit.
 
+Automatic login is in Settings. It stores the LinkedIn email, password, and authenticator setup key encrypted (`LOGIN_SECRET_KEY`). When LinkedIn logs the account out, sending waits, the person stays queued, and SimpleSequence logs back in and answers the 2FA code. A check it cannot answer leaves the account logged out with the reason. Never return or print the saved login.
+
 We do not search for people. We do not run an in-market Signals watcher. We do not send email.
 
 ## Coming soon until a gate is green

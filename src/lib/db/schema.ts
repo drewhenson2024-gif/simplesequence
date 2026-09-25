@@ -36,6 +36,8 @@ export const senderAccounts = sqliteTable("sender_accounts", {
   linkedinPlan: text("linkedin_plan"),
   timezone: text("timezone"),
   lastError: text("last_error"),
+  loginSecret: text("login_secret"),
+  lastLoginAt: text("last_login_at"),
   createdAt: text("created_at").notNull(),
 });
 

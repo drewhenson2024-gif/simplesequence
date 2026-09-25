@@ -39,3 +39,5 @@ Optional: `HUBSPOT_ACCESS_TOKEN` (CRM destination label; export still writes a p
 The sender (`pnpm sender`) stays awake, waits out the gap, and sends one due action while that action’s suggested day, week, and month still have room. Frequency shows those amounts and has **Check now** for the same send. The site stays on Vercel. Hobby cron remains a once-a-day backup (`0 16 * * *`).
 
 Settings shows whether the LinkedIn account is normal, Premium, Sales Navigator, or Recruiter. A follow-up waits until they accept. A message before they accept needs Premium, Sales Navigator, or Recruiter, and a normal account will not send it.
+
+Automatic login in Settings stores the LinkedIn login and authenticator setup key encrypted with `LOGIN_SECRET_KEY` (32 bytes, base64, on Vercel and on the sender). When LinkedIn logs the account out, sending waits and SimpleSequence logs back in with a 2FA code it makes itself.

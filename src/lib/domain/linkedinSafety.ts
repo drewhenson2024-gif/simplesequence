@@ -7,11 +7,14 @@ export const LINKEDIN_MIN_GAP_MS = 2 * 60 * 1000;
 export const PROVIDER_THROTTLE = "provider_throttle";
 export const PROVIDER_RESTRICTION = "provider_restriction";
 
-export type LinkedInProviderSignal = "quota" | "throttle" | "restrict";
+export const PROVIDER_DISCONNECTED = "provider_disconnected";
+
+export type LinkedInProviderSignal = "quota" | "throttle" | "restrict" | "disconnected";
 
 /** Classify Unipile/LinkedIn send errors. Hard restrict language wins over a 429. */
 export function classifyLinkedInProviderError(message: string): LinkedInProviderSignal | null {
   const text = message.toLowerCase();
+  if (/disconnected_account|disconnected from the provider/.test(text)) return "disconnected";
   if (/captcha|checkpoint|temporarily blocked/.test(text)) return "restrict";
   if (/restrict/.test(text) && !/cannot_resend_yet/.test(text)) return "restrict";
   if (/cannot_resend_yet/.test(text)) return "quota";

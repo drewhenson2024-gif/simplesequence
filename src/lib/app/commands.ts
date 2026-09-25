@@ -43,9 +43,11 @@ import { linkedInProfileHref } from "../domain/linkedinProfile";
 import {
   classifyLinkedInProviderError,
   LINKEDIN_INVITE_ROLLING_MS,
+  PROVIDER_DISCONNECTED,
   PROVIDER_RESTRICTION,
   PROVIDER_THROTTLE,
 } from "../domain/linkedinSafety";
+import { loginKeyPresent, normalizeTotpSecret, openLogin, sealLogin, totpCode } from "../secure/login";
 import {
   renderTemplate,
   stepsForTemplate,
@@ -1447,6 +1449,154 @@ export async function reconnectAccount(ctx: AppContext, senderId: string) {
   return { senderId, authUrl: url, live: true };
 }
 
+const AUTO_LOGIN_RETRY_MS = 15 * 60 * 1000;
+
+async function linkedInSenderRow(ctx: AppContext, senderId: string) {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(
+      and(
+        eq(tables.senderAccounts.id, senderId),
+        eq(tables.senderAccounts.workspaceId, ctx.workspaceId),
+        eq(tables.senderAccounts.channel, "linkedin"),
+      ),
+    )
+    .limit(1);
+  if (!sender) throw new CommandError("LinkedIn sender not found", 404);
+  return sender;
+}
+
+export async function saveLinkedInLogin(
+  ctx: AppContext,
+  senderId: string,
+  input: { username: string; password: string; totpSecret: string },
+) {
+  const sender = await linkedInSenderRow(ctx, senderId);
+  if (!loginKeyPresent()) throw new CommandError("Automatic login is not set up on this site yet.", 409);
+  const username = input.username.trim();
+  const totpSecret = normalizeTotpSecret(input.totpSecret);
+  if (!username || !input.password) throw new CommandError("LinkedIn email and password are required.");
+  if (totpSecret.length < 16) throw new CommandError("Paste the full setup key LinkedIn shows for an authenticator app.");
+  let code: string;
+  try {
+    code = totpCode(totpSecret, ctx.clock.now());
+  } catch (err) {
+    throw new CommandError(err instanceof Error ? err.message : "That setup key could not be read.");
+  }
+  await ctx.db
+    .update(tables.senderAccounts)
+    .set({ loginSecret: sealLogin({ username, password: input.password, totpSecret }) })
+    .where(eq(tables.senderAccounts.id, sender.id));
+  await audit(ctx, "save_linkedin_login", { senderId: sender.id });
+  return { saved: true, code };
+}
+
+export async function linkedInLoginCode(ctx: AppContext, senderId: string) {
+  const sender = await linkedInSenderRow(ctx, senderId);
+  if (!sender.loginSecret) throw new CommandError("No login is saved for this account.", 404);
+  return { code: totpCode(openLogin(sender.loginSecret).totpSecret, ctx.clock.now()) };
+}
+
+export async function removeLinkedInLogin(ctx: AppContext, senderId: string) {
+  const sender = await linkedInSenderRow(ctx, senderId);
+  await ctx.db
+    .update(tables.senderAccounts)
+    .set({ loginSecret: null })
+    .where(eq(tables.senderAccounts.id, sender.id));
+  await audit(ctx, "remove_linkedin_login", { senderId: sender.id });
+  return { removed: true };
+}
+
+async function markSenderDisconnected(ctx: AppContext, senderId: string, detail: string) {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, senderId))
+    .limit(1);
+  if (!sender || sender.status === "restricted") return;
+  await ctx.db
+    .update(tables.senderAccounts)
+    .set({
+      status: sender.status === "disconnected" ? "disconnected" : transitionSender(sender.status as SenderStatus, "disconnected"),
+      lastError: detail,
+    })
+    .where(eq(tables.senderAccounts.id, senderId));
+}
+
+export async function autoLogin(
+  ctx: AppContext,
+  senderId: string,
+  opts?: { force?: boolean },
+): Promise<{ ok: boolean; detail: string }> {
+  const [sender] = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(eq(tables.senderAccounts.id, senderId))
+    .limit(1);
+  if (!sender?.loginSecret || !sender.unipileAccountId) {
+    return { ok: false, detail: "No login is saved for this account." };
+  }
+  if (!ctx.unipile.reconnectWithLogin || !ctx.unipile.solveCheckpoint) {
+    return { ok: false, detail: "Automatic login is not available." };
+  }
+  const now = ctx.clock.now();
+  if (!opts?.force && sender.lastLoginAt && now.getTime() - new Date(sender.lastLoginAt).getTime() < AUTO_LOGIN_RETRY_MS) {
+    return { ok: false, detail: "Tried recently. Waiting before the next try." };
+  }
+  await ctx.db
+    .update(tables.senderAccounts)
+    .set({ lastLoginAt: iso(now) })
+    .where(eq(tables.senderAccounts.id, sender.id));
+  let detail = "LinkedIn did not finish the login.";
+  try {
+    const login = openLogin(sender.loginSecret);
+    let result = await ctx.unipile.reconnectWithLogin({
+      accountId: sender.unipileAccountId,
+      username: login.username,
+      password: login.password,
+    });
+    for (let round = 0; round < 4 && result.status === "checkpoint"; round += 1) {
+      const kind = result.checkpoint.toUpperCase();
+      if (kind === "2FA" || kind === "OTP") {
+        result = await ctx.unipile.solveCheckpoint({
+          accountId: result.accountId,
+          code: totpCode(login.totpSecret, ctx.clock.now()),
+        });
+      } else if (kind === "IN_APP_VALIDATION" || kind === "OTP_OR_IN_APP_VALIDATION") {
+        result = await ctx.unipile.solveCheckpoint({ accountId: result.accountId, code: "TRY_ANOTHER_WAY" });
+      } else {
+        detail = `LinkedIn asked for a check this login cannot answer (${kind}). Reconnect in Settings.`;
+        break;
+      }
+    }
+    if (result.status === "connected") {
+      await ctx.db
+        .update(tables.senderAccounts)
+        .set({
+          status: sender.status === "restricted" ? "restricted" : "healthy",
+          lastError: sender.status === "restricted" ? sender.lastError : null,
+        })
+        .where(eq(tables.senderAccounts.id, sender.id));
+      await audit(ctx, "auto_login", { senderId: sender.id, ok: true });
+      return { ok: true, detail: "Logged back in to LinkedIn." };
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "login failed";
+    detail = /\b401\b/.test(message)
+      ? "LinkedIn did not accept the saved email and password."
+      : `Login failed: ${message.replace(/"password":"[^"]*"/g, "").slice(0, 160)}`;
+  }
+  await markSenderDisconnected(ctx, sender.id, detail);
+  await audit(ctx, "auto_login", { senderId: sender.id, ok: false });
+  return { ok: false, detail };
+}
+
+export async function autoLoginNow(ctx: AppContext, senderId: string) {
+  const sender = await linkedInSenderRow(ctx, senderId);
+  return autoLogin(ctx, sender.id, { force: true });
+}
+
 export async function removeLinkedInAccount(ctx: AppContext, senderId: string) {
   const [sender] = await ctx.db
     .select()
@@ -1612,13 +1762,18 @@ export async function refreshLinkedInProfiles(ctx: AppContext, opts?: { force?: 
   }
 }
 
+export function publicSender<T extends { loginSecret?: string | null }>(row: T) {
+  const { loginSecret, ...rest } = row;
+  return { ...rest, autoLogin: Boolean(loginSecret) };
+}
+
 export async function connectStatus(ctx: AppContext) {
   const senders = await ctx.db
     .select()
     .from(tables.senderAccounts)
     .where(eq(tables.senderAccounts.workspaceId, ctx.workspaceId));
   const ws = await getWorkspace(ctx);
-  return { sandbox: Boolean(ws.sandbox), killSwitch: Boolean(ws.killSwitch), senders };
+  return { sandbox: Boolean(ws.sandbox), killSwitch: Boolean(ws.killSwitch), senders: senders.map(publicSender) };
 }
 
 export async function getInbox(ctx: AppContext) {
@@ -2211,6 +2366,14 @@ export async function tick(ctx: AppContext, _opts?: { ignoreWorkingHours?: boole
   const now = ctx.clock.now();
   if (ws.killSwitch) return { processed: 0 };
 
+  const dropped = await ctx.db
+    .select()
+    .from(tables.senderAccounts)
+    .where(and(eq(tables.senderAccounts.workspaceId, ctx.workspaceId), eq(tables.senderAccounts.status, "disconnected")));
+  for (const sender of dropped) {
+    if (sender.loginSecret) await autoLogin(ctx, sender.id);
+  }
+
   const pendingOutbox = await ctx.db
     .select()
     .from(tables.outbox)
@@ -2449,6 +2612,13 @@ async function executeJob(ctx: AppContext, jobId: string): Promise<"held" | void
   } catch (err) {
     const message = err instanceof Error ? err.message : "send failed";
     const signal = classifyLinkedInProviderError(message);
+    if (signal === "disconnected") {
+      await parkJob(ctx, jobId, enrollment.id, ctx.clock.now(), null);
+      await markSenderDisconnected(ctx, job.senderId, PROVIDER_DISCONNECTED);
+      await audit(ctx, "sender_disconnected", { jobId, senderId: job.senderId });
+      await autoLogin(ctx, job.senderId);
+      return "held";
+    }
     if (signal === "quota") {
       const due = new Date(ctx.clock.now().getTime() + LINKEDIN_INVITE_ROLLING_MS);
       await parkJob(ctx, jobId, enrollment.id, due, "invite limit");
