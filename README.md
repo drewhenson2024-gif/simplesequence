@@ -36,4 +36,4 @@ Required env: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `APP_URL` (`https://simp
 
 Optional: `HUBSPOT_ACCESS_TOKEN` (CRM destination label; export still writes a payload first).
 
-A check sends at most one due action when the gap is clear and the connection cap has room. Frequency has **Check now**. The schedule in `vercel.json` is every 5 minutes. Hobby cron can only wake once a day, so that schedule needs Pro, or a ping of `GET /api/scheduler/tick` with `Authorization: Bearer $CRON_SECRET`.
+A check sends at most one due action when the gap is clear and the connection cap has room. Frequency has **Check now**. Hobby cron can only wake once a day (`0 16 * * *`). A 5-minute schedule needs Pro, or a ping of `GET /api/scheduler/tick` with `Authorization: Bearer $CRON_SECRET`.
