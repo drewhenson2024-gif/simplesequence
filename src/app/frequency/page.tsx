@@ -20,7 +20,7 @@ type Frequency = {
   minGapMinutes: number;
   lastActionLabel: string | null;
   gapOpen: boolean;
-  nextCheckLabel: string;
+  processed?: number;
 };
 
 export default function FrequencyPage() {
@@ -28,7 +28,9 @@ export default function FrequencyPage() {
   const [cap, setCap] = useState("25");
   const [gap, setGap] = useState("2");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     void fetch("/api/frequency")
@@ -63,6 +65,23 @@ export default function FrequencyPage() {
     setGap(String(body.minGapMinutes));
   }
 
+  async function checkNow() {
+    setChecking(true);
+    setError(null);
+    setNotice(null);
+    const res = await fetch("/api/frequency/check", { method: "POST" });
+    const body = await res.json();
+    setChecking(false);
+    if (!res.ok) {
+      setError(typeof body.error === "string" ? body.error : "Could not check.");
+      return;
+    }
+    setData(body);
+    setCap(String(body.connectionCap));
+    setGap(String(body.minGapMinutes));
+    setNotice(body.processed > 0 ? "Sent the next action." : "No action was ready.");
+  }
+
   const profile = data?.account ? linkedInProfileHref(data.account.profileUrl) : null;
   const signal = data?.account?.signal;
 
@@ -70,7 +89,7 @@ export default function FrequencyPage() {
     <AppShell>
       <PageHeader
         title="Frequency"
-        lede="How often this LinkedIn account may act. Saving changes the cap and the wait between actions. It does not send anything."
+        lede="How often this LinkedIn account may act. Saving changes the cap and the wait between actions. Check now sends the next due action if the gap is clear and the connection cap has room."
       />
 
       {!data ? (
@@ -126,9 +145,16 @@ export default function FrequencyPage() {
               </p>
             </div>
             <div>
-              <p className="text-xs text-(--muted)">Next check</p>
-              <p className="mt-1 text-xl font-semibold tracking-tight">{data.nextCheckLabel}</p>
-              <p className="mt-1 text-xs text-(--muted)">Sends are checked once a day.</p>
+              <p className="text-xs text-(--muted)">Check</p>
+              <button
+                type="button"
+                disabled={checking}
+                className="btn btn-primary mt-2"
+                onClick={() => void checkNow()}
+              >
+                {checking ? "Checking…" : "Check now"}
+              </button>
+              <p className="mt-1 text-xs text-(--muted)">One due action, if the gap is clear and the cap has room.</p>
             </div>
           </div>
 
@@ -169,8 +195,9 @@ export default function FrequencyPage() {
               {saving ? "Saving…" : "Save"}
             </button>
             <p className="mt-3 max-w-xl text-sm text-(--muted)">
-              One action still goes out per check. LinkedIn can still restrict the account.
+              One action goes out per check. LinkedIn can still restrict the account.
             </p>
+            {notice ? <p className="mt-3 text-sm text-(--ok)">{notice}</p> : null}
             {error ? <p className="mt-3 text-sm text-(--danger)">{error}</p> : null}
           </section>
         </>

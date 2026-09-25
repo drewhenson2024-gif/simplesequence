@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   addLeadsToCampaign,
   createCampaign,
+  runCheck,
   startCampaign,
   tick,
   updateCampaign,
@@ -139,7 +140,9 @@ describe("rolling account pace", () => {
     expect(duringGap.accountBudget?.note).toContain("2-minute gap");
     advance(2 * 60 * 1000);
     const waitingOnCheck = await getCampaign(ctx, campaign.id);
-    expect(waitingOnCheck.accountBudget?.note).toContain("next check");
+    expect(waitingOnCheck.accountBudget?.note).toContain("A check will send");
+    const checked = await runCheck(ctx);
+    expect(checked.processed).toBe(1);
   });
 
   it("says the next step is due when its time has not arrived", async () => {
@@ -174,7 +177,7 @@ describe("rolling account pace", () => {
     const before = await getFrequency(ctx);
     expect(before.connectionsUsed).toBe(1);
     expect(before.connectionCap).toBe(25);
-    expect(before.nextCheckLabel.length).toBeGreaterThan(0);
+    expect(before.gapOpen).toBe(true);
     await updateFrequency(ctx, { connectionCap: 1 });
     expect((await tick(ctx)).processed).toBe(0);
     const view = await getCampaign(ctx, campaign.id);

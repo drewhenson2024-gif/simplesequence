@@ -307,12 +307,11 @@ export default function SettingsPage() {
             />
           </div>
           <p className="py-4 text-sm text-(--muted)">
-            Connection cap and the gap between actions are on{" "}
+            Connection cap, the gap between actions, and Check now are on{" "}
             <Link href="/frequency" className="text-(--ochre) hover:underline">
               Frequency
             </Link>
-            . A
-            higher-priority sequence takes the next slot. LinkedIn can still restrict an account.
+            . A higher-priority sequence takes the next slot. LinkedIn can still restrict an account.
           </p>
           <div className="flex flex-wrap items-center justify-between gap-4 py-4 last:pb-0">
             <div>

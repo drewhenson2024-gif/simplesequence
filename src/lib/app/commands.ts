@@ -33,7 +33,6 @@ import {
   classifyLinkedInProviderError,
   LINKEDIN_INVITE_DAILY_CAP,
   LINKEDIN_INVITE_ROLLING_MS,
-  nextDailyCheck,
   PROVIDER_RESTRICTION,
   PROVIDER_THROTTLE,
 } from "../domain/linkedinSafety";
@@ -1823,8 +1822,12 @@ export async function getFrequency(ctx: AppContext) {
     minGapMinutes: pace.minGapMinutes,
     lastActionLabel: lastAt ? formatWhen(new Date(lastAt), pace.timezone) : null,
     gapOpen: !lastAt || now.getTime() - lastAt >= pace.minGapMs,
-    nextCheckLabel: formatWhen(nextDailyCheck(now), pace.timezone),
   };
+}
+
+export async function runCheck(ctx: AppContext) {
+  const result = await tick(ctx);
+  return { processed: result.processed, ...(await getFrequency(ctx)) };
 }
 
 export async function updateFrequency(
@@ -1956,7 +1959,7 @@ async function accountBudgetFor(
     } else if (!(await senderGapOpen(ctx, senderId, pace.minGapMs))) {
       note = `The next step is waiting for the ${pace.minGapMinutes}-minute gap.`;
     } else {
-      note = `The next step is waiting on the next check, ${formatWhen(nextDailyCheck(now), pace.timezone)}.`;
+      note = "A check will send the next step.";
     }
   }
   return {

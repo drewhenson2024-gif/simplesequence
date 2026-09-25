@@ -17,7 +17,7 @@ The homepage is for customers. Feature cards show an in-page example — they mu
 
 People paste or MCP `urls` of LinkedIn profile URLs → import looks up name, title, company, headline, location, and about → sequence draft (connection + LinkedIn messages) → explicit Start → send (sandbox, working hours, one in-flight, LinkedIn invite daily cap, stop on reply) → Outbox → Inbox → Stop lead.
 
-Hobby cron is once/day — that still paces live send.
+A check sends one due action when the gap is clear and the invite cap has room. Frequency has Check now. The schedule is every 5 minutes.
 
 We do not search for people. We do not run an in-market Signals watcher. We do not send email.
 
