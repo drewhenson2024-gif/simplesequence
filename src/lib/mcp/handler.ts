@@ -188,7 +188,7 @@ export const MCP_TOOLS = [
   {
     name: "create_sequence",
     description:
-      "Create a draft sequence (same as Create draft on Sequences). Starts empty unless you pass steps. Never sends.",
+      "Create a draft sequence. Never sends. Before calling, ask which people list, then which sequence to build. When setting steps, ask which actions and any delay between them. No delay means the next action sends as soon as the gap and invite cap allow. Do not start it in this call.",
     inputSchema: {
       type: "object",
       properties: {
@@ -206,7 +206,7 @@ export const MCP_TOOLS = [
   {
     name: "update_sequence",
     description:
-      "Save a sequence. On a draft, this is the same as Save changes. On a running sequence, queued steps pick up the new copy and delay. Steps that already sent stay sent. Never sends.",
+      "Save a sequence. On a draft, this is the same as Save changes. On a running sequence, queued steps pick up the new copy and delay. Steps that already sent stay sent. When changing steps, ask which actions and any delay between them. No delay means the next action sends as soon as the gap and invite cap allow. Never sends.",
     inputSchema: {
       type: "object",
       properties: {
@@ -236,7 +236,8 @@ export const MCP_TOOLS = [
   },
   {
     name: "add_leads_to_sequence",
-    description: "Enroll a list or LinkedIn profile URLs onto a sequence as pending. Never sends.",
+    description:
+      "Enroll a people list onto a sequence as pending. Never sends. Ask which people list before calling.",
     inputSchema: {
       type: "object",
       properties: {
@@ -264,7 +265,8 @@ export const MCP_TOOLS = [
   },
   {
     name: "start_sequence",
-    description: "Explicit Start. Drafts do not send without this.",
+    description:
+      "Explicit Start. Ask which sequence and which people list, and wait for the answer. Drafts do not send without this.",
     inputSchema: {
       type: "object",
       properties: { sequence_id: { type: "string" } },

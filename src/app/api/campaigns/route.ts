@@ -1,9 +1,15 @@
 import { z } from "zod";
-import { createCampaign, listCampaigns } from "@/lib/app/commands";
+import { createCampaign, createCampaignFromPair, listCampaigns } from "@/lib/app/commands";
 import { getRuntime } from "@/lib/app/runtime";
 import { withCommand } from "@/lib/http/respond";
 
-const schema = z.object({
+const pairSchema = z.object({
+  sequenceId: z.string().min(1),
+  listId: z.string().min(1),
+  name: z.string().optional(),
+});
+
+const nameSchema = z.object({
   name: z.string().min(1),
   templateKey: z.enum(["linkedin_only"]).optional(),
 });
@@ -14,7 +20,11 @@ export async function GET() {
 
 export async function POST(req: Request) {
   return withCommand(async () => {
-    const input = schema.parse(await req.json());
-    return createCampaign(await getRuntime(), input);
+    const body = await req.json();
+    const ctx = await getRuntime();
+    const pair = pairSchema.safeParse(body);
+    if (pair.success) return createCampaignFromPair(ctx, pair.data);
+    const input = nameSchema.parse(body);
+    return createCampaign(ctx, input);
   });
 }

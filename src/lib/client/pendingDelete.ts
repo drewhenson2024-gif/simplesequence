@@ -1,4 +1,4 @@
-export type PendingKind = "list" | "campaign";
+export type PendingKind = "list" | "campaign" | "sequence";
 
 export type PendingDelete = {
   kind: PendingKind;
@@ -31,7 +31,9 @@ function emit(committed: PendingDelete | null = null) {
 }
 
 function endpoint(item: PendingDelete) {
-  return item.kind === "list" ? `/api/lists/${item.id}` : `/api/campaigns/${item.id}`;
+  if (item.kind === "list") return `/api/lists/${item.id}`;
+  if (item.kind === "sequence") return `/api/sequences/${item.id}`;
+  return `/api/campaigns/${item.id}`;
 }
 
 async function commit(item: PendingDelete) {

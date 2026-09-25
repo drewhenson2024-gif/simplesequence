@@ -76,12 +76,34 @@ export const listLeads = sqliteTable(
   (t) => [uniqueIndex("list_leads_pk").on(t.listId, t.leadId)],
 );
 
+export const sequences = sqliteTable("sequences", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull(),
+  name: text("name").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const sequenceTemplateSteps = sqliteTable("sequence_template_steps", {
+  id: text("id").primaryKey(),
+  sequenceId: text("sequence_id").notNull(),
+  stepIndex: integer("step_index").notNull(),
+  channel: text("channel").notNull(),
+  action: text("action").notNull(),
+  delayHours: integer("delay_hours").notNull().default(0),
+  bodyTemplate: text("body_template").notNull().default(""),
+  subjectTemplate: text("subject_template"),
+  enabled: integer("enabled").notNull().default(1),
+  imageUrl: text("image_url"),
+});
+
 export const campaigns = sqliteTable("campaigns", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull(),
   name: text("name").notNull(),
   status: text("status").notNull(),
   templateKey: text("template_key"),
+  sequenceId: text("sequence_id"),
+  listId: text("list_id"),
   linkedinSenderId: text("linkedin_sender_id"),
   priority: integer("priority").notNull().default(0),
   createdAt: text("created_at").notNull(),

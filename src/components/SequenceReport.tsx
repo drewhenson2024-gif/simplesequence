@@ -233,7 +233,7 @@ export function SequenceReport({
         </section>
 
         <section className="mt-8">
-          <h2 className="text-lg">People in this sequence</h2>
+          <h2 className="text-lg">People in this campaign</h2>
           <div className="mt-2 flex flex-wrap gap-3 text-sm text-(--muted)">
             {Object.entries(enrollmentCounts).map(([key, n]) => (
               <span key={key}>
@@ -286,7 +286,7 @@ export function SequenceReport({
         <section className="mt-8">
           <h2 className="text-lg">Outbox</h2>
           <p className="mt-1 text-sm text-(--muted)">
-            Queued, sent, or skipped for this sequence. A skip reason means that step was dropped and the
+            Queued, sent, or skipped for this campaign. A skip reason means that step was dropped and the
             sequence continues.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -385,7 +385,7 @@ export function SequenceReport({
             <SoonBadge />
           </div>
           <p className="mt-2 text-sm text-(--muted)">
-            Writing new copy from these stats is coming soon. The notes below come from the numbers on this sequence.
+            Writing new copy from these stats is coming soon. The notes below come from the numbers on this campaign.
           </p>
           <ul className="mt-3 space-y-2">
             {(run?.insights ?? ["No sends yet. Start the sequence to fill this in."]).map((line) => (

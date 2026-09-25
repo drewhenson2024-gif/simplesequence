@@ -494,6 +494,150 @@ export async function createCampaign(
   return { id, status: "draft" };
 }
 
+function templateStepValues(sequenceId: string, steps: SequenceStepDraft[]) {
+  return steps.map((step) => ({
+    id: newId("stp"),
+    sequenceId,
+    stepIndex: step.stepIndex,
+    channel: step.channel,
+    action: step.action,
+    delayHours: step.delayHours,
+    bodyTemplate: step.bodyTemplate,
+    subjectTemplate: step.subjectTemplate,
+    enabled: step.enabled === false ? 0 : 1,
+    imageUrl: step.imageUrl ?? null,
+  }));
+}
+
+export async function createSequence(
+  ctx: AppContext,
+  input: { name: string; steps?: SequenceStepDraft[] },
+) {
+  const now = iso(ctx.clock.now());
+  const id = newId("seq");
+  const steps =
+    input.steps && input.steps.length > 0
+      ? input.steps
+      : [
+          {
+            stepIndex: 0,
+            channel: "linkedin" as const,
+            action: "connection" as const,
+            delayHours: 0,
+            bodyTemplate: "",
+            subjectTemplate: null,
+          },
+        ];
+  rejectRemovedSteps(steps);
+  await ctx.db.insert(tables.sequences).values({
+    id,
+    workspaceId: ctx.workspaceId,
+    name: input.name,
+    createdAt: now,
+  });
+  await ctx.db.insert(tables.sequenceTemplateSteps).values(templateStepValues(id, steps));
+  await audit(ctx, "create_sequence", { sequenceId: id, name: input.name });
+  return getSequence(ctx, id);
+}
+
+export async function listSequences(ctx: AppContext) {
+  const rows = await ctx.db
+    .select()
+    .from(tables.sequences)
+    .where(eq(tables.sequences.workspaceId, ctx.workspaceId));
+  if (rows.length === 0) return [];
+  const steps = await ctx.db
+    .select({ sequenceId: tables.sequenceTemplateSteps.sequenceId })
+    .from(tables.sequenceTemplateSteps)
+    .where(
+      inArray(
+        tables.sequenceTemplateSteps.sequenceId,
+        rows.map((row) => row.id),
+      ),
+    );
+  const counts = new Map<string, number>();
+  for (const step of steps) counts.set(step.sequenceId, (counts.get(step.sequenceId) ?? 0) + 1);
+  return rows
+    .map((row) => ({ ...row, stepCount: counts.get(row.id) ?? 0 }))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+export async function getSequence(ctx: AppContext, sequenceId: string) {
+  const [sequence] = await ctx.db
+    .select()
+    .from(tables.sequences)
+    .where(and(eq(tables.sequences.id, sequenceId), eq(tables.sequences.workspaceId, ctx.workspaceId)))
+    .limit(1);
+  if (!sequence) throw new CommandError("sequence not found", 404);
+  const steps = await ctx.db
+    .select()
+    .from(tables.sequenceTemplateSteps)
+    .where(eq(tables.sequenceTemplateSteps.sequenceId, sequenceId));
+  steps.sort((a, b) => a.stepIndex - b.stepIndex);
+  return { ...sequence, steps };
+}
+
+export async function updateSequence(
+  ctx: AppContext,
+  sequenceId: string,
+  input: { name?: string; steps?: SequenceStepDraft[] },
+) {
+  const sequence = await getSequence(ctx, sequenceId);
+  rejectRemovedSteps(input.steps);
+  if (input.name !== undefined) {
+    await ctx.db
+      .update(tables.sequences)
+      .set({ name: input.name })
+      .where(eq(tables.sequences.id, sequenceId));
+  }
+  if (input.steps) {
+    await ctx.db
+      .delete(tables.sequenceTemplateSteps)
+      .where(eq(tables.sequenceTemplateSteps.sequenceId, sequenceId));
+    if (input.steps.length > 0) {
+      await ctx.db.insert(tables.sequenceTemplateSteps).values(templateStepValues(sequenceId, input.steps));
+    }
+  }
+  await audit(ctx, "update_sequence", { sequenceId, name: input.name ?? sequence.name });
+  return getSequence(ctx, sequenceId);
+}
+
+export async function deleteSequence(ctx: AppContext, sequenceId: string) {
+  const sequence = await getSequence(ctx, sequenceId);
+  await ctx.db.delete(tables.sequenceTemplateSteps).where(eq(tables.sequenceTemplateSteps.sequenceId, sequenceId));
+  await ctx.db.delete(tables.sequences).where(eq(tables.sequences.id, sequenceId));
+  await audit(ctx, "delete_sequence", { sequenceId, name: sequence.name });
+  return { ok: true as const, sequenceId };
+}
+
+export async function createCampaignFromPair(
+  ctx: AppContext,
+  input: { sequenceId: string; listId: string; name?: string },
+) {
+  const sequence = await getSequence(ctx, input.sequenceId);
+  if (sequence.steps.length === 0) throw new CommandError("sequence has no actions", 400);
+  const list = await getList(ctx, input.listId);
+  const created = await createCampaign(ctx, {
+    name: input.name?.trim() || `${sequence.name} · ${list.name}`,
+    steps: sequence.steps.map((step) => ({
+      stepIndex: step.stepIndex,
+      channel: "linkedin" as const,
+      action: step.action === "connection" ? ("connection" as const) : ("message" as const),
+      delayHours: step.delayHours,
+      bodyTemplate: step.bodyTemplate,
+      subjectTemplate: step.subjectTemplate,
+      enabled: step.enabled !== 0,
+      imageUrl: step.imageUrl,
+    })),
+  });
+  await ctx.db
+    .update(tables.campaigns)
+    .set({ sequenceId: sequence.id, listId: list.id })
+    .where(eq(tables.campaigns.id, created.id));
+  await addLeadsToCampaign(ctx, created.id, { listId: list.id });
+  return getCampaign(ctx, created.id);
+}
+
 export async function updateCampaign(
   ctx: AppContext,
   campaignId: string,
@@ -710,8 +854,16 @@ export async function getCampaign(ctx: AppContext, campaignId: string) {
   const accountBudget = campaign.linkedinSenderId
     ? await accountBudgetFor(ctx, campaign.linkedinSenderId, campaign.status, senderSignal, jobRows)
     : null;
+  const [sequenceRow] = campaign.sequenceId
+    ? await ctx.db.select().from(tables.sequences).where(eq(tables.sequences.id, campaign.sequenceId)).limit(1)
+    : [];
+  const [listRow] = campaign.listId
+    ? await ctx.db.select().from(tables.lists).where(eq(tables.lists.id, campaign.listId)).limit(1)
+    : [];
   return {
     ...campaign,
+    sequenceName: sequenceRow?.name ?? null,
+    listName: listRow?.name ?? null,
     senderSignal,
     accountBudget,
     linkedinPlan: sender?.linkedinPlan ?? null,

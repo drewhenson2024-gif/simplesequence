@@ -80,6 +80,24 @@ CREATE TABLE IF NOT EXISTS list_leads (
   lead_id TEXT NOT NULL,
   UNIQUE(list_id, lead_id)
 );
+CREATE TABLE IF NOT EXISTS sequences (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sequence_template_steps (
+  id TEXT PRIMARY KEY,
+  sequence_id TEXT NOT NULL,
+  step_index INTEGER NOT NULL,
+  channel TEXT NOT NULL,
+  action TEXT NOT NULL,
+  delay_hours INTEGER NOT NULL DEFAULT 0,
+  body_template TEXT NOT NULL DEFAULT '',
+  subject_template TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  image_url TEXT
+);
 CREATE TABLE IF NOT EXISTS campaigns (
   id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
@@ -229,7 +247,7 @@ export function createAppDb(url = sqliteUrlFromEnv()): AppDb {
   return { db, client };
 }
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 async function readSchemaVersion(client: Client): Promise<number> {
   try {
@@ -260,6 +278,8 @@ export async function migrate(client: Client): Promise<void> {
     "ALTER TABLE sender_accounts ADD COLUMN profile_url TEXT",
     "ALTER TABLE sender_accounts ADD COLUMN linkedin_plan TEXT",
     "ALTER TABLE campaigns ADD COLUMN priority INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE campaigns ADD COLUMN sequence_id TEXT",
+    "ALTER TABLE campaigns ADD COLUMN list_id TEXT",
     "ALTER TABLE workspaces ADD COLUMN connection_cap INTEGER NOT NULL DEFAULT 25",
     "ALTER TABLE workspaces ADD COLUMN min_gap_minutes INTEGER NOT NULL DEFAULT 2",
   ]) {

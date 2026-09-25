@@ -11,7 +11,8 @@ import { ensureAnalyticsCache, ensureInboxCache, ensureSettingsCache } from "@/l
 
 const NAV = [
   { href: "/lists", label: "People", icon: PeopleIcon },
-  { href: "/campaigns", label: "Sequences", icon: SequencesIcon },
+  { href: "/sequences", label: "Sequences", icon: SequencesIcon },
+  { href: "/campaigns", label: "Campaigns", icon: CampaignsIcon },
   { href: "/inbox", label: "Inbox", icon: InboxIcon },
   { href: "/analytics", label: "Analytics", icon: AnalyticsIcon },
   { href: "/frequency", label: "Frequency", icon: FrequencyIcon },
@@ -101,6 +102,16 @@ function PeopleIcon() {
       <circle cx="9" cy="7" r="3" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a3 3 0 0 1 0 5.74" />
+    </svg>
+  );
+}
+
+function CampaignsIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 4v5" />
     </svg>
   );
 }

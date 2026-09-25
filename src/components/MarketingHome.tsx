@@ -14,8 +14,8 @@ const FEATURES: Array<{
 }> = [
   {
     id: "sequences",
-    title: "Sequences that learn",
-    body: "Every sequence has a stats board. Suggestions come from those numbers and save as a new draft. Nothing starts until you say so.",
+    title: "Campaigns you start",
+    body: "A sequence is the actions. A campaign pairs that sequence with a people list. Stats stay on the campaign. Nothing starts until you say so.",
   },
   {
     id: "people",
@@ -26,9 +26,9 @@ const FEATURES: Array<{
 
 const STEPS = [
   { n: "1", t: "People", d: "Paste LinkedIn profile URLs, or send them from your agent. We look up name, title, and company." },
-  { n: "2", t: "Sequence", d: "A connection request, then LinkedIn messages. The pace stays conservative. The outbox shows queued, sent, skipped, and failed." },
-  { n: "3", t: "Inbox", d: "See who needs a reply, and stop a person when the conversation should end. Only you press Start." },
-  { n: "4", t: "Analytics", d: "See what worked. Suggestions become a new draft. Writing new copy from the stats is coming soon." },
+  { n: "2", t: "Sequence", d: "The actions and the delay between them. A sequence has no people and does not send." },
+  { n: "3", t: "Campaign", d: "One sequence plus one people list. Start is here. The campaign keeps those actions." },
+  { n: "4", t: "Inbox", d: "See who needs a reply, and stop a person when the conversation should end." },
 ];
 
 export function MarketingHome() {
@@ -169,7 +169,7 @@ function FeatureExample({ id }: { id: FeatureId }) {
   );
 }
 
-const PREVIEW_NAV = ["People", "Sequences", "Inbox", "Analytics", "Frequency", "Settings"];
+const PREVIEW_NAV = ["People", "Sequences", "Campaigns", "Inbox", "Analytics", "Frequency", "Settings"];
 
 function AppChrome({ active, children }: { active: string; children: ReactNode }) {
   return (

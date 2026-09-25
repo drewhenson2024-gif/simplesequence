@@ -232,6 +232,10 @@ describe("MCP", () => {
     expect(steps.items.properties.imageUrl.description).toContain("image");
     expect(update?.inputSchema.properties).toMatchObject({ sequence_id: { type: "string" } });
     expect(MCP_TOOLS.map((t) => t.name)).not.toContain("create_campaign");
+    expect(create?.description).toContain("which people list");
+    expect(create?.description).toContain("any delay");
+    const start = MCP_TOOLS.find((t) => t.name === "start_sequence");
+    expect(start?.description).toContain("which sequence and which people list");
   });
 
   it("update_sequence can add, insert, edit, and remove stages like the editor", async () => {

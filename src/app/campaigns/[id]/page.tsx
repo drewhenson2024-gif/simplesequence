@@ -37,6 +37,8 @@ type Campaign = {
   jobCounts: Record<string, number>;
   senderSignal?: "throttled" | "restricted" | null;
   linkedinPlan?: string | null;
+  sequenceName?: string | null;
+  listName?: string | null;
   accountBudget?: {
     connectionsUsed: number;
     connectionCap: number;
@@ -255,7 +257,7 @@ export default function CampaignDetailPage() {
   if (!data) {
     return (
       <AppShell>
-        <BackLink href="/campaigns" label="Sequences" />
+        <BackLink href="/campaigns" label="Campaigns" />
         <p className="mt-4 text-sm text-(--muted)">Loading…</p>
       </AppShell>
     );
@@ -263,7 +265,7 @@ export default function CampaignDetailPage() {
 
   return (
     <AppShell>
-      <BackLink href="/campaigns" label="Sequences" />
+      <BackLink href="/campaigns" label="Campaigns" />
       <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <p className="mb-2">
@@ -294,7 +296,9 @@ export default function CampaignDetailPage() {
             <h1 className="text-2xl leading-normal break-words">{data.name}</h1>
           )}
           <p className="mt-2 text-sm text-(--muted)">
-            {steps.length} stages · {durationLabel} · {data.enrollments.length} people
+            {steps.length} actions · {durationLabel} · {data.enrollments.length} people
+            {data.sequenceName ? ` · Sequence: ${data.sequenceName}` : ""}
+            {data.listName ? ` · People: ${data.listName}` : ""}
           </p>
           <label className="mt-3 flex flex-wrap items-center gap-2 text-sm text-(--muted)">
             Priority
@@ -388,15 +392,19 @@ export default function CampaignDetailPage() {
               setDirty(true);
             }}
           />
-          {data.status === "running" || data.status === "paused" ? (
-            <p className="mt-4 text-sm text-(--muted)">
-              Saving updates steps that have not been sent. Sent steps stay as they went out.
-            </p>
-          ) : null}
+          <p className="mt-4 text-sm text-(--muted)">
+            These actions belong to this campaign. Editing the sequence later does not change them.
+            {data.status === "running" || data.status === "paused"
+              ? " Saving updates steps that have not been sent."
+              : ""}
+          </p>
           {data.status === "draft" ? (
             <section className="card mt-8 p-5">
-              <h2 className="text-lg">People in this sequence</h2>
-              <p className="mt-1 text-sm text-(--muted)">Pick a list of LinkedIn URLs, then add those people here.</p>
+              <h2 className="text-lg">People</h2>
+              <p className="mt-1 text-sm text-(--muted)">
+                {data.listName ? `Started from ${data.listName}. ` : ""}
+                Add another people list to this campaign.
+              </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <select
                   className="field w-auto min-w-56"

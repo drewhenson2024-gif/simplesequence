@@ -132,8 +132,8 @@ export default function AnalyticsPage() {
 
       <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <section className="card p-5">
-          <h2 className="text-lg">Sequences</h2>
-          <p className="mt-1 text-sm text-(--muted)">Every sequence, including drafts.</p>
+          <h2 className="text-lg">Campaigns</h2>
+          <p className="mt-1 text-sm text-(--muted)">Every campaign, including drafts.</p>
           {!loaded ? (
             <p className="mt-4 text-sm text-(--muted)">Loading…</p>
           ) : data?.runs.length ? (
@@ -242,7 +242,7 @@ export default function AnalyticsPage() {
                   <h3 className="text-sm font-medium">Suggestions</h3>
                 </div>
                 <p className="mt-2 text-sm text-(--muted)">
-                  Based on the numbers from this sequence. Saving creates a new draft and leaves the current one unchanged.
+                  Based on the numbers from this campaign. Saving creates a new draft and leaves the current one unchanged.
                 </p>
                 <div className="mt-4 flex flex-wrap items-center gap-3">
                   <button
