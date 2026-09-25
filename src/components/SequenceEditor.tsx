@@ -1,7 +1,7 @@
 "use client";
 
 import { Switch } from "@/components/Toggle";
-import { stepRequirement } from "@/lib/domain/linkedinPlan";
+import { connectionNoteGuidance, stepRequirement } from "@/lib/domain/linkedinPlan";
 import { renderTemplate, VARIABLE_GROUPS, type LeadFields } from "@/lib/domain/templates";
 
 export type EditorStep = {
@@ -234,6 +234,11 @@ export function SequenceEditor({
                     {step.bodyTemplate.trim().split(/\s+/).filter(Boolean).length} words · {step.bodyTemplate.length}{" "}
                     characters
                   </p>
+                  {step.action === "connection" && connectionNoteGuidance(linkedinPlan, step.bodyTemplate) ? (
+                    <p className="mt-2 text-sm text-(--muted)">
+                      {connectionNoteGuidance(linkedinPlan, step.bodyTemplate)}
+                    </p>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-1">
                     {VARIABLE_GROUPS.flatMap((group) => group.fields).map((field) => (
                       <button

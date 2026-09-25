@@ -1,4 +1,4 @@
-import { planFromUnipileAccount } from "../domain/linkedinPlan";
+import { connectionNote, planFromUnipileAccount } from "../domain/linkedinPlan";
 import { profileUrlFromLinkedInAccount } from "../domain/linkedinProfile";
 
 export type UnipileInviteInput = {
@@ -342,12 +342,13 @@ export class LiveUnipile implements UnipilePort {
       return { providerId: `dry_invite_${Date.now()}`, dryRun: true };
     }
     const providerId = await this.providerId(input.accountId, input.profileUrl);
+    const note = connectionNote(input.body);
     const body = (await this.request("/api/v1/users/invite", {
       method: "POST",
       body: JSON.stringify({
         account_id: input.accountId,
         provider_id: providerId,
-        message: input.body.slice(0, 300),
+        ...(note ? { message: note } : {}),
         ...(input.imageUrl ? { picture_url: input.imageUrl } : {}),
       }),
     })) as { invitation_id?: string; object?: string };

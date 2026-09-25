@@ -11,7 +11,7 @@ import {
 } from "@/lib/app/commands";
 import { createAppDb, migrate, seedWorkspace } from "@/lib/db/client";
 import { senderAccounts, sendJobs } from "@/lib/db/schema";
-import { planFromPremiumFeatures, stepRequirement } from "@/lib/domain/linkedinPlan";
+import { connectionNote, connectionNoteGuidance, planFromPremiumFeatures, stepRequirement } from "@/lib/domain/linkedinPlan";
 import { DEFAULT_WORKSPACE_ID } from "@/lib/ids";
 import { MockUnipile } from "@/lib/unipile/port";
 
@@ -44,6 +44,14 @@ describe("linkedin plan", () => {
     expect(planFromPremiumFeatures(["premium"])).toBe("premium");
     expect(planFromPremiumFeatures(["sales_navigator", "premium"])).toBe("sales_navigator");
     expect(planFromPremiumFeatures(["recruiter"])).toBe("recruiter");
+  });
+
+  it("tells a free account that a connection note is about five a month", () => {
+    expect(connectionNote("  Hi  ")).toBe("Hi");
+    expect(connectionNote("   ")).toBeNull();
+    expect(connectionNoteGuidance("normal", "Hi {{first_name}}")).toContain("about 5");
+    expect(connectionNoteGuidance("normal", "  ")).toContain("not limited to 5");
+    expect(connectionNoteGuidance("premium", "Hi")).toBeNull();
   });
 
   it("labels a message before a connection as blocked on a normal account", () => {

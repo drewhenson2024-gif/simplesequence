@@ -58,6 +58,17 @@ export default function SequenceDetailPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [linkedinPlan, setLinkedinPlan] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/settings")
+      .then((res) => res.json())
+      .then((body: { linkedinSenderId?: string | null; senders?: Array<{ id: string; linkedinPlan?: string | null }> }) => {
+        const selected = body.senders?.find((sender) => sender.id === body.linkedinSenderId) ?? body.senders?.[0];
+        setLinkedinPlan(selected?.linkedinPlan ?? null);
+      })
+      .catch(() => setLinkedinPlan(null));
+  }, []);
 
   useEffect(() => {
     void (async () => {
@@ -146,6 +157,7 @@ export default function SequenceDetailPage() {
         <SequenceEditor
           steps={steps}
           leads={[]}
+          linkedinPlan={linkedinPlan}
           previewIndex={previewIndex}
           onPreviewIndex={setPreviewIndex}
           editable

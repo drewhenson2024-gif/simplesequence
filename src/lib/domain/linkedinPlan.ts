@@ -20,6 +20,19 @@ export function canMessageBeforeAccept(plan: string | null | undefined): boolean
   return plan === "premium" || plan === "sales_navigator" || plan === "recruiter";
 }
 
+export function connectionNote(body: string): string | null {
+  const note = body.trim().slice(0, 300);
+  return note ? note : null;
+}
+
+export function connectionNoteGuidance(plan: string | null | undefined, body: string): string | null {
+  if (canMessageBeforeAccept(plan)) return null;
+  if (connectionNote(body)) {
+    return "A free account can send about 5 connections with a note each month. Clear the note to send this connection without that limit.";
+  }
+  return "No note. A free account is not limited to 5 of these a month.";
+}
+
 export function planLabel(plan: string | null | undefined): string {
   if (plan === "premium") return "Premium";
   if (plan === "sales_navigator") return "Sales Navigator";
